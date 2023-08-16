@@ -1,0 +1,2 @@
+# Instruction-aligned waypoint model
+

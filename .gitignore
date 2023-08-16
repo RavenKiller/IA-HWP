@@ -1,0 +1,26 @@
+.ftpignore
+.ftpconfig
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.log
+.vscode/*
+videos/
+data/*
+!data/.gitkeep
+
+habitat_connectivity_graph/*
+!habitat_connectivity_graph/.gitkeep
+
+# logs/*
+# !logs/.gitkeep
+*.pth
+
+obstacle/*
+!obstacle/.gitkeep
+
+waypoint_prediction
+
+vlnce_baselines/waypoint_pred

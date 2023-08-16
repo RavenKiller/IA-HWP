@@ -1,0 +1,54 @@
+BASE_TASK_CONFIG_PATH: habitat_extensions/config/vlnce_task_bertidx.yaml
+SIMULATOR_GPU_IDS: [4]
+TORCH_GPU_ID: 4
+TORCH_GPU_IDS: [4]
+# VIDEO_OPTION: ['disk']
+# VIDEO_DIR: videos/iaw-law/unseen
+TRAINER_NAME: schedulesampler-IAW
+GPU_NUMBERS: 1
+NUM_ENVIRONMENTS: 1
+TENSORBOARD_DIR: logs/tensorboard_dirs/
+CHECKPOINT_FOLDER: logs/checkpoints/
+EVAL_CKPT_PATH_DIR: logs/checkpoints/
+RESULTS_DIR: logs/eval_results/
+SIMULATOR:
+  HABITAT_SIM_V0:
+    ALLOW_SLIDING: True
+
+EVAL:
+  USE_CKPT_CONFIG: False
+  SPLIT: val_unseen
+  EPISODE_COUNT: -1
+
+IL:
+  epochs: 50
+  batch_size: 16
+  lr: 1e-4
+  way_lr: 1e-4
+  schedule_ratio: 0.75
+  decay_time: 10
+  max_traj_len: 20
+
+MODEL:
+  policy_name: PolicyViewSelectionCMA
+  spatial_output: False
+  num_cameras: 12
+  RGB_ENCODER:
+    output_size: 512
+  DEPTH_ENCODER:
+    output_size: 256
+  VISUAL_DIM:
+    vis_hidden: 512
+    directional: 64
+    distance: 64
+  INSTRUCTION_ENCODER:
+    bidirectional: True
+    use_pretrained_embeddings: False
+    embedding_size: 256  # 256
+    hidden_size: 384     # 256
+  STATE_ENCODER:
+    hidden_size: 768
+  WAY_MODEL:
+    directional: 64
+    hidden_size: 768
+
