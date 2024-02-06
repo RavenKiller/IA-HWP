@@ -27,7 +27,7 @@ _C.RESULTS_DIR = "data/checkpoints/pretrained/evals"
 # -----------------------------------------------------------------------------
 _C.EVAL = CN()
 # The split to evaluate on
-_C.EVAL.SPLIT = "unseen"
+_C.EVAL.SPLIT = "val_seen"
 _C.EVAL.EPISODE_COUNT = -1
 _C.EVAL.LANGUAGES = ["en-US", "en-IN"]
 _C.EVAL.SAMPLE = False
@@ -49,7 +49,7 @@ _C.INFERENCE.PREDICTIONS_FILE = "predictions.json"
 _C.INFERENCE.INFERENCE_NONLEARNING = False
 _C.INFERENCE.NONLEARNING = CN()
 _C.INFERENCE.NONLEARNING.AGENT = "RandomAgent"
-_C.INFERENCE.FORMAT = "r2r"  # either 'rxr' or 'r2r'
+_C.INFERENCE.FORMAT = "rxr"  # either 'rxr' or 'r2r'
 # -----------------------------------------------------------------------------
 # IMITATION LEARNING CONFIG
 # -----------------------------------------------------------------------------

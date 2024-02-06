@@ -36,7 +36,6 @@ from .utils import (
     length2mask, dir_angle_feature,
 )
 from .Focal_Loss import focal_loss
-
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=FutureWarning)
     import tensorflow as tf  # noqa: F401
@@ -51,7 +50,10 @@ class SSTrainer(BaseVLNCETrainer):
     def __init__(self, config=None):
         super().__init__(config)
         self.max_len = int(config.IL.max_traj_len) #  * 0.97 transfered gt path got 0.96 spl
-        self.focal_loss = focal_loss(alpha=[1,1,1,1,1,1,1,1,1,1,1,1,1.2], num_classes=13,reduce=False) # 对最后一个类别(stop), 施加0.75权重
+        self.focal_loss = focal_loss(alpha=[1,1,1,1,1,1,1,1,1,1,1,1,1], num_classes=13,reduce=False) # 对最后一个类别(stop), 施加0.75权重
+        # 辅助损失权重 dir weight，stop与其他非停止的类别角度相差pi/2
+        self.dir_weight = np.array([0,0.06699,0.25,0.5,0.75,0.933,1,0.933,0.75,0.5,0.25,0.06699,0.5])
+        self.loss_weight = 2
 
     def _make_dirs(self) -> None:
         self._make_ckpt_dir()
@@ -167,6 +169,7 @@ class SSTrainer(BaseVLNCETrainer):
         )
 
         ml_loss = 0.
+        angle_reward = 0.
         total_weight = 0.
         not_done_index = list(range(self.envs.num_envs))
         init_num_envs = self.envs.num_envs
@@ -234,12 +237,18 @@ class SSTrainer(BaseVLNCETrainer):
             # get resulting distances by executing candidate actions
             # use the resulting distances as a pseudo-ground-truth
             # the last value in each list is the current distance
-            batch_angles = batch_angles * cand_rgb.size(0)
+            batch_angles = batch_angles * cand_rgb.size(0) # [0,11/6*pi]
+            # 辅助损失 direction aware loss
+            dir_weight = torch.from_numpy(self.dir_weight).float().to(cand_rgb.device)
+            dir_weight = torch.reshape(dir_weight, (1, 13)).expand(cand_rgb.size(0),13)
             last_dist = np.zeros(len(batch_angles), np.float32)
+            # cand_dists_to_law = [[] for _ in range(len(batch_angles))]
             cand_dists_to_goal = [[] for _ in range(len(batch_angles))]
             oracle_cand_idx = []
             oracle_stop = []
-            for j in range(len(batch_angles)):
+            # 生成伪标签, 使用固定的前进距离0.25作为伪标签
+            # way_pos = 
+            for j in range(len(batch_angles)): # batch 维
                 for k in range(len(batch_angles[j])):
                     angle_k = batch_angles[j][k]
                     # test 0.25 meters forward to get a pseudo-ground-truth
@@ -249,6 +258,7 @@ class SSTrainer(BaseVLNCETrainer):
                             "angle": angle_k, "forward": forward_k,
                         })
                     cand_dists_to_goal[j].append(dist_k)
+                # 每次向12个方向探索, (尝试0.25m看哪个距离终点更近)
                 curr_dist_to_goal = self.envs.call_at(
                     j, "current_dist_to_goal")
                 last_dist[j] = curr_dist_to_goal
@@ -271,17 +281,6 @@ class SSTrainer(BaseVLNCETrainer):
             #                 "angle": angle_k, "forward": forward_k, "pos": way_pos,
             #             })
             #         cand_dists_to_goal[j].append(dist_k)
-            #     # 每次向12个方向探索, (尝试0.25m看哪个距离终点更近)
-            #     curr_dist_to_goal = self.envs.call_at(
-            #         j, "current_dist_to_goal")
-            #     last_dist[j] = curr_dist_to_goal
-            #     # if within target range (metrics def as 3.0)
-            #     if curr_dist_to_goal < 1.5:
-            #         oracle_cand_idx.append(candidate_lengths[j] - 1)
-            #         oracle_stop.append(True)
-            #     else:
-            #         oracle_cand_idx.append(np.argmin(cand_dists_to_goal[j]))
-            #         oracle_stop.append(False)
 
             if train_rl:
                 None
@@ -292,10 +291,15 @@ class SSTrainer(BaseVLNCETrainer):
                         torch.rand_like(actions, dtype=torch.float) <= self.ratio,
                         oracle_actions, actions)
                 # 交叉熵损失
-                # current_loss = F.cross_entropy(logits, oracle_actions.squeeze(1), reduction="none") # [2.4676, 2.6977]
-                # focal loss
+                # current_loss = F.cross_entropy(logits, oracle_actions.squeeze(1), reduction="none")
                 current_loss = self.focal_loss(logits, oracle_actions.squeeze(1)) #[1.5501, 1.7599]
+                # focal loss
                 ml_loss += torch.sum(current_loss)
+                # 计算辅助损失
+                logit_score = F.softmax(logits, dim=1)
+                new_score = logit_score * dir_weight
+                new_score = new_score.sum(axis=1)
+                angle_reward += torch.sum(new_score)
             else:  # inference
                 actions = logits.argmax(dim=-1, keepdim=True)
 
@@ -374,13 +378,7 @@ class SSTrainer(BaseVLNCETrainer):
                     #     observations[j]['collision'], way_step_reward[j])
 
                     # scaled slack reward
-                    way_step_reward[perm_index] -= 0.05 * dist_offsets[j] / 0.25 # 惩罚过远的步数
-                
-                # nvem-0.3 修改内容, 奖励
-                # else:
-                #     # reward the previous step for leading view-selection to stop
-                #     if curr_dist < 3.0:
-                #         way_rewards_dict[-1][perm_index] += 2.5
+                    way_step_reward[perm_index] -= 0.05 * dist_offsets[j] / 0.25
 
             way_masks_dict.append(way_step_mask)
             way_rewards_dict.append(way_step_reward)
@@ -446,8 +444,9 @@ class SSTrainer(BaseVLNCETrainer):
             None
         elif train_tf:
             loss_view = ml_loss / total_weight
+            loss_dir = angle_reward / total_weight
 
-        return loss_view, loss_way_actor, loss_way_critic
+        return loss_view, loss_way_actor, loss_way_critic, loss_dir
 
     def train(self) -> None:
         split = self.config.TASK_CONFIG.DATASET.SPLIT
@@ -576,10 +575,11 @@ class SSTrainer(BaseVLNCETrainer):
                     )
 
                 for batch_idx in t_:
-                    loss_view, loss_way_actor, loss_way_critic = self.train_ml(
+                    # 添加辅助损失 
+                    loss_view, loss_way_actor, loss_way_critic, aux_loss = self.train_ml(
                         in_train=True, 
                         train_tf=True, train_rl=False)
-                    loss = loss_view + loss_way_actor + loss_way_critic
+                    loss = loss_view + loss_way_actor + loss_way_critic + aux_loss * self.loss_weight
 
                     if loss == -1:
                         break
@@ -588,7 +588,7 @@ class SSTrainer(BaseVLNCETrainer):
                     torch.nn.utils.clip_grad_norm(
                         self.waypoint_model.parameters(), 40.)
                     self.optimizer.step()
-                    losses = [loss_view, loss_way_actor, loss_way_critic]
+                    losses = [loss_view, loss_way_actor, loss_way_critic, aux_loss]
 
                     if self.world_size > 1:
                         for i in range(len(losses)):
@@ -601,6 +601,7 @@ class SSTrainer(BaseVLNCETrainer):
                     loss_view = losses[0]
                     loss_actor = losses[1]
                     loss_critic = losses[2]
+                    loss_dir = losses[3]
                     if self.config.use_pbar:
                         if self.local_rank < 1:  # seems can be removed
                             t_.set_postfix(
@@ -609,11 +610,13 @@ class SSTrainer(BaseVLNCETrainer):
                                     "loss_view": round(loss_view, 4),
                                     "loss_actor": round(loss_actor, 4),
                                     "loss_critic": round(loss_critic, 4),
+                                    "loss_dir": round(loss_dir, 4),
                                 }
                             )
                             writer.add_scalar("loss_view", loss_view, self.step_id)
                             writer.add_scalar("loss_actor", loss_actor, self.step_id)
                             writer.add_scalar("loss_critic", loss_critic, self.step_id)
+                            writer.add_scalar("loss_dir", loss_dir, self.step_id)
                     self.step_id += 1  # noqa: SIM113
 
                 if self.local_rank < 1:  # and epoch % 3 == 0:

@@ -13,6 +13,8 @@ from habitat_extensions.shortest_path_follower import (
 )
 from habitat_extensions.task import VLNExtendedEpisode
 import pickle
+import gzip
+import json
 
 @registry.register_sensor(name="GlobalGPSSensor")
 class GlobalGPSSensor(Sensor):
@@ -149,6 +151,113 @@ class VLNOracleProgressSensor(Sensor):
 
         return np.array(progress, dtype = np.float32)
 
+@registry.register_sensor
+class VLNOracleActionGeodesicSensor(Sensor):
+    r"""Sensor for observing the optimal action to take. Does not rely on the shortest path to the Goal.
+    Instead observes the next waypoint and the best action towards that based on the shortest path.
+    Args:
+        sim: reference to the simulator for calculating task observations.
+        config: config for the sensor.
+    """
+
+    def __init__(self, sim: Simulator, config: Config, *args: Any, **kwargs: Any):
+        self._sim = sim
+        gt_path = config.GT_PATH.format(split=config.SPLIT)
+        with gzip.open(gt_path, "rt") as f:
+            self.gt_waypoint_locations = json.load(f)
+        
+        self.is_sparse = getattr(config, "IS_SPARSE", True)
+        self.num_inter_waypoints = getattr(config, "NUM_WAYPOINTS", 0)   # Set number of intermediate waypoints
+        self.goal_radius = getattr(config, "GOAL_RADIUS", 0.5)
+
+        super().__init__(config=config)
+        self.follower = ShortestPathFollower(
+            self._sim,
+            # all goals can be navigated to within 0.5m.
+            goal_radius=getattr(config, "GOAL_RADIUS", 0.5),
+            return_one_hot=False,
+        )
+        self.follower.mode = "geodesic_path"
+        self.reference_path_action = None
+        self.next_way_action = 0
+        self.episode_id_action = None
+
+        self.possible_actions= [HabitatSimActions.MOVE_FORWARD, HabitatSimActions.TURN_LEFT, HabitatSimActions.TURN_RIGHT]
+
+    def _get_uuid(self, *args: Any, **kwargs: Any):
+        return "vln_law_action_sensor"
+
+    def _get_sensor_type(self, *args: Any, **kwargs: Any):
+        return SensorTypes.TACTILE
+
+    def _get_observation_space(self, *args: Any, **kwargs: Any):
+        return spaces.Box(low=0.0, high=100, shape=(1,), dtype=np.float)
+
+    def get_observation(self, *args: Any, episode, **kwargs: Any):
+        
+        if self.num_inter_waypoints > 0:
+            locs = self.gt_waypoint_locations[str(episode.episode_id)]["locations"] #episode.reference_path
+            ep_path_length = self._sim.geodesic_distance(locs[0], episode.goals[0].position)
+            
+            way_locations = [locs[0]]
+            count = 0
+            dist = ep_path_length / (self.num_inter_waypoints+1)
+            for way in locs[:-1]:
+                d = self._sim.geodesic_distance(locs[0], way)
+                if d >= dist:
+                    way_locations.append(way)
+                    if count >= (self.num_inter_waypoints-1):
+                        break
+                    count += 1
+                    dist += ep_path_length / (self.num_inter_waypoints+1)
+
+            way_locations.append(episode.goals[0].position)
+
+        else:
+            if self.is_sparse:
+                # Sparse supervision of waypoints
+                way_locations = episode.reference_path
+            else:
+                # Dense supervision of waypoints
+                way_locations = self.gt_waypoint_locations[str(episode.episode_id)]["locations"]
+
+        current_position = self._sim.get_agent_state().position.tolist()
+        
+        nearest_dist = float("inf")
+        nearest_way = way_locations[-1]
+        nearest_way_count = len(way_locations)-1
+        # way locations 就是参考路径
+        for ind, way in reversed(list(enumerate(way_locations))):
+            distance_to_way = self._sim.geodesic_distance(
+                current_position, way
+            )
+            if distance_to_way > self.goal_radius and distance_to_way < nearest_dist:
+                dist_way_to_goal = self._sim.geodesic_distance(
+                    way, episode.goals[0].position
+                )
+                dist_agent_to_goal = self._sim.geodesic_distance(
+                    current_position, episode.goals[0].position
+                )
+                if dist_agent_to_goal > dist_way_to_goal:
+                    nearest_dist = distance_to_way
+                    nearest_way = way
+                    nearest_way_count = ind
+
+        best_action = self.follower.get_next_action(nearest_way)
+
+        if best_action is None:
+            while best_action is None:
+                # if the agent has reached the current waypoint then update the next waypoint
+                if nearest_way_count == (len(way_locations)-1):
+                    return np.array([HabitatSimActions.STOP])
+                
+                nearest_way_count = nearest_way_count + 1
+                nearest_way = way_locations[nearest_way_count]
+                best_action = self.follower.get_next_action(nearest_way)
+            
+            return np.array([nearest_way])
+            
+        return np.array([nearest_way])
 
 @registry.register_sensor
 class RxRInstructionSensor(Sensor):

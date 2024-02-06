@@ -27,10 +27,10 @@ IL:
   decay_time: 10
   max_traj_len: 20
   load_from_ckpt: False
-  ckpt_to_load: logs/checkpoints/acom-0.1/ckpt.8.pth
+  ckpt_to_load: logs/checkpoints/iaw-0.1/ckpt.8.pth
 
 MODEL:
-  policy_name: PolicyViewSelectionCMA
+  policy_name: PolicyViewSelectionIAW
   spatial_output: False
   num_cameras: 12
   RGB_ENCODER:

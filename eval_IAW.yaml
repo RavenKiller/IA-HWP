@@ -30,7 +30,7 @@ IL:
   max_traj_len: 20
 
 MODEL:
-  policy_name: PolicyViewSelectionCMA
+  policy_name: PolicyViewSelectionIAW
   spatial_output: False
   num_cameras: 12
   RGB_ENCODER:

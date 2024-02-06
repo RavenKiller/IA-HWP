@@ -6,8 +6,6 @@ import numpy as np
 from habitat.core.embodied_task import (
     SimulatorTaskAction,
 )
-from habitat.tasks.utils import cartesian_to_polar
-from habitat.utils.geometry_utils import quaternion_rotate_vector
 from habitat.core.registry import registry
 from habitat.sims.habitat_simulator.actions import HabitatSimActions
 
@@ -75,7 +73,6 @@ class MoveHighToLowAction(SimulatorTaskAction):
 
 @registry.register_task_action
 class MoveHighToLowActionEval(SimulatorTaskAction):
-    # 高级动作转为低级 记录 位置 朝向以及是否碰撞
     def step(self, *args: Any, 
             angle: float, distance: float,
             **kwargs: Any):
@@ -85,7 +82,6 @@ class MoveHighToLowActionEval(SimulatorTaskAction):
 
         positions = []
         collisions = []
-        headings = []
         # left_action = HabitatSimActions.TURN_LEFT
         forward_action = HabitatSimActions.MOVE_FORWARD
         # init_left = self._sim.get_agent(0).agent_config.action_space[
@@ -113,12 +109,6 @@ class MoveHighToLowActionEval(SimulatorTaskAction):
                 self._sim.step_without_obs(forward_action)
             positions.append(self._sim.get_agent_state().position)
             collisions.append(self._sim.previous_step_collided)
-            # 计算朝向
-            heading_vector = quaternion_rotate_vector(
-                self._sim.get_agent_state().rotation.inverse(), np.array([0, 0, -1])
-            )
-            heading = cartesian_to_polar(-heading_vector[2], heading_vector[0])[1]
-            headings.append(heading)
 
         # self._sim.get_agent(0).agent_config.action_space[
         #     left_action].actuation.amount = init_left
@@ -126,6 +116,5 @@ class MoveHighToLowActionEval(SimulatorTaskAction):
         #     forward_action].actuation.amount = init_forward
         output['positions'] = positions
         output['collisions'] = collisions
-        output['headings'] = headings
 
         return output

@@ -3,7 +3,14 @@ import torch.distributed as dist
 import numpy as np
 import math
 import copy
+from habitat_baselines.utils.common import center_crop
+import cv2
 
+DEPTH_LIST=['depth', 'depth_30.0', 'depth_60.0',
+                'depth_90.0', 'depth_120.0', 'depth_150.0',
+                'depth_180.0', 'depth_210.0', 'depth_240.0',
+                'depth_270.0', 'depth_300.0', 'depth_330.0']
+RGB_LIST=[k.replace('depth','rgb') for k in DEPTH_LIST]
 class ARGS():
     def __init__(self):
         self.local_rank = 0
@@ -233,3 +240,59 @@ def show_heatmaps(map1, map2, xlabel, ylabel, title=None, text=None, path=None, 
     fig.suptitle(title)
     fig.savefig(path + '/' + title + '.png')
     plt.close()
+
+def draw_pano_obs(observation, path=None, ep_id=None, idx=None):
+    rgb, depth = get_pano_obs(observation)
+    fig = plt.figure()
+    ax = fig.add_subplot(211)
+    ax.set_title("episode-" + ep_id + '-step-' + str(int(idx)) + '.png')
+    ax.imshow(rgb)
+
+    ax2 = fig.add_subplot(212)
+    ax2.imshow(depth)
+    fig.savefig(path + '/pano/' + 'episode-' + ep_id + '-step-' + str(int(idx)) + '.png')
+    plt.close()
+
+def get_pano_obs(observation, observation_size=(1024,256)):
+    """
+    根据viewpoint位置画出全景图
+    Args:
+        observation: 模拟器返回的观察值
+        observation_size: 1024*256
+    return:
+        pano_rgb[rgb, depth]
+    """
+    pano_rgb = []
+    pano_depth = []
+    
+    rgb_frame = []
+    depth_frame = []
+    # for i in range(6,12):
+    #     rgb_frame.append(center_crop(observation[f"rgb_{i}"], (int(224/3), 224)))
+    # 中心裁剪,12个分区,每个分区由中间部分组成
+    for i in range(11,-1,-1):
+        rgb_frame.append(center_crop(observation[RGB_LIST[i]], (int(256/3-10), 256)))
+        depth = (observation[DEPTH_LIST[i]][:,[256//3,512//3],:].squeeze() * 255).astype(np.uint8)
+        depth = np.stack([depth for _ in range(3)], axis=2)
+        depth_frame.append(depth)
+    # rgb_frame.append(center_crop(observation["rgb"], (int(224/3-10), 224)))
+    # # observation["depth"] 高*宽*通道1
+    # depth = (observation["depth"][:,[256//3,512//3],:].squeeze() * 255).astype(np.uint8)
+    # depth = np.stack([depth for _ in range(3)], axis=2)
+    # depth_frame.append(depth)
+    pano_rgb.append(
+        cv2.resize(
+            np.concatenate(rgb_frame, axis=1),
+            dsize=observation_size,
+        )
+    )
+    pano_depth.append(
+        cv2.resize(
+            np.concatenate(depth_frame, axis=1),
+            dsize=observation_size,
+            interpolation=cv2.INTER_CUBIC,
+        )
+    )
+    pano_rgb = np.concatenate(pano_rgb, axis=0)
+    pano_depth = np.concatenate(pano_depth, axis=0)
+    return pano_rgb, pano_depth

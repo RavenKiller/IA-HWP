@@ -23,15 +23,13 @@ from vlnce_baselines.models.encoders.resnet_encoders import (
 )
 from vlnce_baselines.models.policy import ILPolicy
 
-# from vlnce_baselines.waypoint_pred.TRM_net import BinaryDistPredictor_TRM
-# from vlnce_baselines.waypoint_pred.utils import nms
 from vlnce_baselines.models.utils import (
     length2mask, angle_feature, dir_angle_feature)
 import math
 
 
 @baseline_registry.register_policy
-class PolicyViewSelectionCMA(ILPolicy):
+class PolicyViewSelectionIAW(ILPolicy):
     def __init__(
         self,
         observation_space: Space,
@@ -39,7 +37,7 @@ class PolicyViewSelectionCMA(ILPolicy):
         model_config: Config,
     ):
         super().__init__(
-            CMANet(
+            IAWNet(
                 observation_space=observation_space,
                 model_config=model_config,
                 num_actions=action_space.n,
@@ -62,13 +60,7 @@ class PolicyViewSelectionCMA(ILPolicy):
         )
 
 
-class CMANet(Net):
-    r"""A cross-modal attention (CMA) network that contains:
-    Instruction encoder
-    Depth encoder
-    RGB encoder
-    CMA state encoder
-    """
+class IAWNet(Net):
 
     def __init__(
         self, observation_space: Space, model_config: Config, num_actions
@@ -339,7 +331,8 @@ class CMANet(Net):
             _, logits = self.state_vis_logits(
                 x, vis_in, cand_mask, output_prob=False)
 
-            return logits, view_states_out, text_vis_weight, vis_weight
+            return logits, view_states_out
+            # return logits, view_states_out, text_vis_weight, vis_weight
 
         # elif mode == 'critic':
         #     return self.critic(post_states)

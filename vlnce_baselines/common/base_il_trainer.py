@@ -50,7 +50,7 @@ from fastdtw import fastdtw
 from ..utils import get_camera_orientations
 from ..utils import (
     length2mask, dir_angle_feature, dir_angle_feature_with_ele,
-    show_heatmaps,
+    show_heatmaps, draw_pano_obs,
 )
 
 with warnings.catch_warnings():
@@ -354,7 +354,22 @@ class BaseVLNCETrainer(BaseILTrainer):
                 )
 
                 # view selection action logits
-                logits, view_states, attn_vis_weight, attn_act_weight = self.policy.net(
+                # 可视化
+                # logits, view_states, attn_vis_weight, attn_act_weight = self.policy.net(
+                #     mode = 'selection',
+                #     observations = batch,
+                #     instruction = all_view_lang_feats,
+                #     lang_mask = all_view_lang_masks,
+                #     view_states = view_states,
+                #     # way_states = way_states,
+                #     prev_headings = prev_headings,
+                #     cand_rgb = cand_rgb, 
+                #     cand_depth = cand_depth,
+                #     cand_direction = cand_direction,
+                #     cand_mask = cand_mask,
+                #     masks = not_done_masks,
+                # )
+                logits, view_states = self.policy.net(
                     mode = 'selection',
                     observations = batch,
                     instruction = all_view_lang_feats,
@@ -409,8 +424,8 @@ class BaseVLNCETrainer(BaseILTrainer):
                         prev_way_dists.append(dist_offsets[j].item())
 
             outputs = envs.step(env_actions)
-            attn_vis.append(attn_vis_weight)
-            attn_act.append(attn_act_weight)
+            # attn_vis.append(attn_vis_weight)
+            # attn_act.append(attn_act_weight)
             observations, _, dones, infos = [list(x) for x in zip(*outputs)]
             for j, ob in enumerate(observations):
                 if env_actions[j]['action']['action'] == 0:
@@ -428,20 +443,24 @@ class BaseVLNCETrainer(BaseILTrainer):
 
             # reset envs and observations if necessary
             for i in range(envs.num_envs):
+                ep_id = str(envs.current_episodes()[i].episode_id)
                 if len(config.VIDEO_OPTION) > 0:
                     frame = observations_to_image(observations[i], infos[i])
                     frame = append_text_to_image(
                         frame, current_episodes[i].instruction.instruction_text
                     )
                     rgb_frames[i].append(frame)
+                    # 绘制全景图       
+
+                    draw_pano_obs(observations[i], path=config.VIDEO_DIR, ep_id=ep_id, idx=infos[i]["steps_taken"])
 
                 if not dones[i]:
                     continue
-
+                         # dones之后要做的事
                 info = infos[i]
                 metric = {}
                 metric['steps_taken'] = info['steps_taken']
-                ep_id = str(envs.current_episodes()[i].episode_id)
+                
                 gt_path = np.array(self.gt_data[ep_id]['locations']).astype(np.float)
                 if 'current_path' in envs.current_episodes()[i].info.keys():
                     positions_ = np.array(envs.current_episodes()[i].info['current_path']).astype(np.float)
@@ -508,12 +527,12 @@ class BaseVLNCETrainer(BaseILTrainer):
                     rgb_frames[i] = []
 
                 # 可视化 768 -> step
-                map1 = torch.cat(attn_vis, dim=0)
-                map2 = torch.cat(attn_act, dim=0)
-                instr_text = observations[0]['instruction']['text']
-                show_heatmaps(map1.T.cpu(), map2.T.cpu(), 'time_step', 'instruction', title="episode-"+ep_id, text=instr_text, path=config.VIDEO_DIR)
-                attn_vis = []
-                attn_act = []
+                # map1 = torch.cat(attn_vis, dim=0)
+                # map2 = torch.cat(attn_act, dim=0)
+                # instr_text = observations[0]['instruction']['text']
+                # show_heatmaps(map1.T.cpu(), map2.T.cpu(), 'time_step', 'instruction', title="episode:"+ep_id, text=instr_text, path=config.VIDEO_DIR)
+                # attn_vis = []
+                # attn_act = []
 
             observations = extract_instruction_tokens(
                 observations,
@@ -787,10 +806,10 @@ class BaseVLNCETrainer(BaseILTrainer):
                 prev_ckpt_ind = -1
                 while True:
                     current_ckpt = None
-                    # while current_ckpt is None:
-                    current_ckpt = poll_checkpoint_folder(
-                        self.config.EVAL_CKPT_PATH_DIR, prev_ckpt_ind
-                    )
+                    while current_ckpt is None:
+                        current_ckpt = poll_checkpoint_folder(
+                            self.config.EVAL_CKPT_PATH_DIR, prev_ckpt_ind
+                        )
                     if current_ckpt is None:
                         break
                     time.sleep(2)  # sleep for 2 secs before polling again
@@ -802,7 +821,7 @@ class BaseVLNCETrainer(BaseILTrainer):
                         writer=writer,
                         checkpoint_index=prev_ckpt_ind,
                     )
-
+                    
     def inference(self) -> None:
         r"""Main method of trainer evaluation. Calls _eval_checkpoint() that
         is specified in Trainer class that inherits from BaseRLTrainer
@@ -1133,3 +1152,215 @@ class BaseVLNCETrainer(BaseILTrainer):
             logger.info(
                 f"Predictions saved to: {config.INFERENCE.PREDICTIONS_FILE}"
             )
+
+    # def inference(self) -> None:
+    #     r"""Runs inference on a single checkpoint, creating a path predictions file."""
+
+    #     checkpoint_path = self.config.INFERENCE.CKPT_PATH
+    #     logger.info(f"checkpoint_path: {checkpoint_path}")
+
+    #     if self.config.INFERENCE.USE_CKPT_CONFIG:
+    #         config = self._setup_eval_config(
+    #             self.load_checkpoint(checkpoint_path, map_location="cpu")[
+    #                 "config"
+    #             ]
+    #         )
+    #     else:
+    #         config = self.config.clone()
+
+    #     config.defrost()
+    #     # config.TASK_CONFIG.DATASET.SPLIT = self.config.INFERENCE.SPLIT
+    #     config.TASK_CONFIG.DATASET.SPLIT = 'val_unseen'
+    #     config.TASK_CONFIG.DATASET.ROLES = ["guide"]
+    #     config.TASK_CONFIG.DATASET.LANGUAGES = config.INFERENCE.LANGUAGES
+    #     config.TASK_CONFIG.ENVIRONMENT.ITERATOR_OPTIONS.SHUFFLE = False
+    #     config.TASK_CONFIG.ENVIRONMENT.ITERATOR_OPTIONS.MAX_SCENE_REPEAT_STEPS = (
+    #         -1
+    #     )
+    #     config.IL.ckpt_to_load = config.INFERENCE.CKPT_PATH
+    #     config.TASK_CONFIG.TASK.MEASUREMENTS = []
+    #     config.TASK_CONFIG.TASK.SENSORS = [
+    #         s for s in config.TASK_CONFIG.TASK.SENSORS if "INSTRUCTION" in s
+    #     ]
+    #     config.ENV_NAME = "VLNCEInferenceEnv"
+    #     config.freeze()
+
+    #     # envs = construct_envs_auto_reset_false(
+    #     #     config, get_env_class(config.ENV_NAME),
+    #     #     self.traj
+    #     # )
+
+    #     envs = construct_envs(
+    #         config, get_env_class(config.ENV_NAME),
+    #         auto_reset_done=False,
+    #         episodes_allowed=self.collect_val_traj()
+    #     )
+
+    #     obs_transforms = get_active_obs_transforms(config)
+    #     observation_space = apply_obs_transforms_obs_space(
+    #         envs.observation_spaces[0], obs_transforms
+    #     )
+
+    #     self._initialize_policy(
+    #         config,
+    #         load_from_ckpt=True,
+    #         observation_space=observation_space,
+    #         action_space=envs.action_spaces[0],
+    #     )
+    #     self.policy.eval()
+
+    #     observations = envs.reset()
+    #     observations = extract_instruction_tokens(
+    #         observations, self.config.TASK_CONFIG.TASK.INSTRUCTION_SENSOR_UUID
+    #     )
+    #     batch = batch_obs(observations, self.device)
+    #     batch = apply_obs_transforms_batch(batch, obs_transforms)
+
+    #     rnn_states = torch.zeros(
+    #         envs.num_envs,
+    #         self.num_recurrent_layers,
+    #         config.MODEL.STATE_ENCODER.hidden_size,
+    #         device=self.device,
+    #     )
+    #     prev_actions = torch.zeros(
+    #         envs.num_envs, 1, device=self.device, dtype=torch.long
+    #     )
+    #     not_done_masks = torch.zeros(
+    #         envs.num_envs, 1, dtype=torch.uint8, device=self.device
+    #     )
+
+    #     episode_predictions = defaultdict(list)
+
+    #     # episode ID --> instruction ID for rxr predictions format
+    #     instruction_ids: Dict[str, int] = {}
+
+    #     # populate episode_predictions with the starting state
+    #     current_episodes = envs.current_episodes()
+    #     for i in range(envs.num_envs):
+    #         episode_predictions[current_episodes[i].episode_id].append(
+    #             envs.call_at(i, "get_info", {"observations": {}})
+    #         )
+    #         if config.INFERENCE.FORMAT == "rxr":
+    #             ep_id = current_episodes[i].episode_id
+    #             k = current_episodes[i].instruction.instruction_id
+    #             instruction_ids[ep_id] = int(k)
+
+    #     with tqdm.tqdm(
+    #         total=sum(envs.count_episodes()),
+    #         desc=f"[inference:{self.config.INFERENCE.SPLIT}]",
+    #     ) as pbar:
+    #         # number = 0
+    #         while envs.num_envs > 0:
+    #             current_episodes = envs.current_episodes()
+    #             with torch.no_grad():
+    #                 actions, rnn_states = self.policy.act2(
+    #                     batch,
+    #                     rnn_states,
+    #                     prev_actions,
+    #                     not_done_masks,
+    #                     deterministic=not config.INFERENCE.SAMPLE,
+    #                 )
+    #                 prev_actions.copy_(actions)
+
+    #             outputs = envs.step([a[0].item() for a in actions])
+    #             observations, _, dones, infos = [
+    #                 list(x) for x in zip(*outputs)
+    #             ]
+
+    #             not_done_masks = torch.tensor(
+    #                 [[0] if done else [1] for done in dones],
+    #                 dtype=torch.uint8,
+    #                 device=self.device,
+    #             )
+
+    #             # reset envs and observations if necessary
+    #             for i in range(envs.num_envs):
+    #                 episode_predictions[current_episodes[i].episode_id].append(
+    #                     infos[i]
+    #                 )
+    #                 if not dones[i]:
+    #                     continue
+
+    #                 observations[i] = envs.reset_at(i)[0]
+    #                 prev_actions[i] = torch.zeros(1, dtype=torch.long)
+    #                 pbar.update()
+
+    #             observations = extract_instruction_tokens(
+    #                 observations,
+    #                 self.config.TASK_CONFIG.TASK.INSTRUCTION_SENSOR_UUID,
+    #             )
+    #             batch = batch_obs(observations, self.device)
+    #             batch = apply_obs_transforms_batch(batch, obs_transforms)
+
+    #             envs_to_pause = []
+    #             next_episodes = envs.current_episodes()
+    #             for i in range(envs.num_envs):
+    #                 if not dones[i]:
+    #                     continue
+
+    #                 if next_episodes[i].episode_id in episode_predictions:
+    #                     envs_to_pause.append(i)
+    #                 else:
+    #                     episode_predictions[
+    #                         next_episodes[i].episode_id
+    #                     ].append(
+    #                         envs.call_at(i, "get_info", {"observations": {}})
+    #                     )
+    #                     if config.INFERENCE.FORMAT == "rxr":
+    #                         ep_id = next_episodes[i].episode_id
+    #                         k = next_episodes[i].instruction.instruction_id
+    #                         instruction_ids[ep_id] = int(k)
+    #                 # number += 1
+
+    #             (
+    #                 envs,
+    #                 rnn_states,
+    #                 not_done_masks,
+    #                 prev_actions,
+    #                 batch,
+    #                 _,
+    #             ) = self._pause_envs(
+    #                 envs_to_pause,
+    #                 envs,
+    #                 rnn_states,
+    #                 not_done_masks,
+    #                 prev_actions,
+    #                 batch,
+    #             )
+
+    #     envs.close()
+
+    #     if config.INFERENCE.FORMAT == "r2r":
+    #         with open(config.INFERENCE.PREDICTIONS_FILE, "w") as f:
+    #             json.dump(episode_predictions, f, indent=2)
+
+    #         logger.info(
+    #             f"Predictions saved to: {config.INFERENCE.PREDICTIONS_FILE}"
+    #         )
+    #     else:  # use 'rxr' format for rxr-habitat leaderboard
+    #         predictions_out = []
+
+    #         for k,v in episode_predictions.items():
+
+    #             # save only positions that changed
+    #             path = [v[0]["position"]]
+    #             for p in v[1:]:
+    #                 if path[-1] != p["position"]:
+    #                     path.append(p["position"])
+
+    #             predictions_out.append(
+    #                 {
+    #                     "instruction_id": instruction_ids[k],
+    #                     "path": path,
+    #                 }
+    #             )
+
+    #         predictions_out.sort(key=lambda x: x["instruction_id"])
+    #         with jsonlines.open(
+    #             config.INFERENCE.PREDICTIONS_FILE, mode="w"
+    #         ) as writer:
+    #             writer.write_all(predictions_out)
+
+    #         logger.info(
+    #             f"Predictions saved to: {config.INFERENCE.PREDICTIONS_FILE}"
+    #         )

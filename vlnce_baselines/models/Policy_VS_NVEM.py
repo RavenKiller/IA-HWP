@@ -4,7 +4,7 @@
 Author: Wang Naijia
 Date: 2022-04-04 17:03:13
 LastEditors: Wang Naijia
-LastEditTime: 2022-05-24 14:26:33
+LastEditTime: 2024-02-07 00:50:06
 Descripttion: 
 '''
 from typing import Dict, Optional, Tuple
@@ -41,9 +41,7 @@ from vlnce_baselines.models.utils import (
 
 from vlnce_baselines.models.policy import ILPolicy
 import math
-    
-# 可视化工具
-import seaborn as sns        
+          
 @baseline_registry.register_policy
 class PolicyViewSelectionNVEM(ILPolicy):
     def __init__(self,
@@ -84,8 +82,7 @@ class PolicyViewSelectionNVEM(ILPolicy):
         
 class NvemNet(Net):
     """
-    对Nvem模型的集成，预测的结果是对动作分布的预测（FWD,L,R,STOP）
-    v1: 先不编深度特征
+    预测的结果是对动作分布的预测（FWD,L,R,STOP）
     """
 
     def __init__(
@@ -439,7 +436,9 @@ class NvemNet(Net):
             logits = torch.cat([logits_vis.unsqueeze(2), logits_act.unsqueeze(2)], dim=-1)
             logits = torch.matmul(logits, fusion_weight.unsqueeze(2)).squeeze(2)
 
-            return logits, view_states_out, text_vis_weight, text_act_weight
+            return logits, view_states_out
+            # 为了可视化权重
+            # return logits, view_states_out, text_vis_weight, text_act_weight
 
 
 class SoftDotAttention(nn.Module):

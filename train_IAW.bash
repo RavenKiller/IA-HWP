@@ -1,5 +1,5 @@
 
-flag="--exp_name acom-0.1
+flag="--exp_name iaw_aux
       --run-type train
       --exp-config train_IAW.yaml
 

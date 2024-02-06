@@ -16,12 +16,6 @@ class Waypoint_Model(nn.Module):
         self.model_config = model_config
         self.device = device
 
-        # # instruction encoder and waypoint transformers
-        # print('\nInitalizing the VLN-BERT model ...')
-        # self.vlnbert = get_vlnbert_models(config=None)  # initialize the VLN-BERT
-        # self.vlnbert.config.directions = 16 + 16 # 16 rgb and 16 depth spatial features
-        # layer_norm_eps = self.vlnbert.config.layer_norm_eps
-
         self.space_pool = nn.Sequential(
             nn.AdaptiveAvgPool2d((4,4)),
         )
@@ -42,21 +36,6 @@ class Waypoint_Model(nn.Module):
             ),
             nn.ReLU(True),
         )
-
-        # # previous predicted waypoint info encoder
-        # self.enc_prev_waypoint = nn.Sequential(
-        #     nn.Linear(model_config.VISUAL_DIM.directional+model_config.VISUAL_DIM.distance, 
-        #         model_config.VISUAL_DIM.directional+model_config.VISUAL_DIM.distance),
-        #     nn.Tanh(),
-        # )
-
-        # # the recurrent waypoint state decoder
-        # self.state_encoder = build_rnn_state_encoder(
-        #     input_size=model_config.WAY_MODEL.hidden_size,
-        #     hidden_size=model_config.WAY_MODEL.hidden_size,
-        #     rnn_type=model_config.STATE_ENCODER.rnn_type,
-        #     num_layers=1,
-        # )
 
         # spatial attention
         self.prev_state_spatial_attn = SoftDotAttention(
@@ -132,8 +111,8 @@ class Waypoint_Model(nn.Module):
             cand_angles = torch.zeros(batch_size, dtype=torch.float32, device=self.device)
             for i in range(batch_size):
                 act_idx = actions[i]
-                if act_idx[0] != len(batch_angles[i]):
-                    cand_angles[i] = batch_angles[i][act_idx]
+                if act_idx[0] != len(batch_angles[0]):
+                    cand_angles[i] = batch_angles[0][act_idx]
 
             # project visual features (space_pool to 4x4 to match depth maps)
             rgb_x = self.rgb_Wa(
@@ -153,20 +132,6 @@ class Waypoint_Model(nn.Module):
             ).repeat(batch_size, 1, 1)
             vis_in = self.vismerge_linear(
                 torch.cat((rgb_x, depth_x, spatial_feats), dim=2))
-
-            # # previous-state-visual spatial attention
-            # vis_tilde_prev, _ = self.prev_state_spatial_attn(
-            #     way_states.squeeze(1), vis_in)
-
-            # way_states_out = way_states.detach().clone()
-            # (
-            #     state,
-            #     way_states_out[:, 0 : self.state_encoder.num_recurrent_layers],
-            # ) = self.state_encoder(
-            #     vis_tilde_prev,
-            #     way_states[:, 0 : self.state_encoder.num_recurrent_layers],
-            #     masks,
-            # )
 
             # language attention using waypoint state
             text_state, _ = self.state_text_attn(

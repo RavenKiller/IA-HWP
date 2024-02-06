@@ -18,7 +18,7 @@ INFERENCE:
   SPLIT: test
   USE_CKPT_CONFIG: False
   SAMPLE: False
-  CKPT_PATH: logs/checkpoints/iaw_aux_eval/ckpt.48.pth
+  CKPT_PATH: logs/checkpoints/iaw_aux/best_unseen.pth
   PREDICTIONS_FILE: predictions_test.json
   FORMAT: r2r
 
@@ -32,7 +32,7 @@ IL:
   max_traj_len: 20
 
 MODEL:
-  policy_name: PolicyViewSelectionCMA
+  policy_name: PolicyViewSelectionIAW
   spatial_output: False
   num_cameras: 12
   RGB_ENCODER:

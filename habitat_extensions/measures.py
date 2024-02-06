@@ -49,14 +49,13 @@ class Position(Measure):
         if len(self._metric['position']) > 0:
             if (current_position == self._metric['position'][-1]).all():
                 return
-        # 为了inference 注掉了
-        # distance = self._sim.geodesic_distance(
-        #     current_position,
-        #     [goal.position for goal in episode.goals],
-        #     episode,
-        # )
+        distance = self._sim.geodesic_distance(
+            current_position,
+            [goal.position for goal in episode.goals],
+            episode,
+        )
         self._metric['position'].append(self._sim.get_agent_state().position)
-        # self._metric['distance'].append(distance)
+        self._metric['distance'].append(distance)
 
 @registry.register_measure
 class PathLength(Measure):
