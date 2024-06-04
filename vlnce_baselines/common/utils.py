@@ -17,9 +17,9 @@ def extract_instruction_tokens(
             isinstance(observations[i][instruction_sensor_uuid], dict)
             and tokens_uuid in observations[i][instruction_sensor_uuid]
         ):
-            observations[i][instruction_sensor_uuid] = observations[i][
+            observations[i][instruction_sensor_uuid] = np.array(observations[i][
                 instruction_sensor_uuid
-            ]["tokens"]
+            ]["tokens"])
         else:
             break
     return observations

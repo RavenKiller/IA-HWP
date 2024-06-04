@@ -25,3 +25,6 @@ obstacle/*
 waypoint_prediction
 
 vlnce_baselines/waypoint_pred
+events.out.*
+logs/eval_results_v2
+data

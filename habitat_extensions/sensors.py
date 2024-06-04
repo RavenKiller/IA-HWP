@@ -7,6 +7,7 @@ from habitat.core.registry import registry
 from habitat.core.simulator import Observations, Sensor, SensorTypes, Simulator
 from habitat.sims.habitat_simulator.actions import HabitatSimActions
 from habitat.tasks.nav.shortest_path_follower import ShortestPathFollower
+from habitat.tasks.vln.vln import VLNEpisode
 
 from habitat_extensions.shortest_path_follower import (
     ShortestPathFollowerCompat,
@@ -259,6 +260,30 @@ class VLNOracleActionGeodesicSensor(Sensor):
             
         return np.array([nearest_way])
 
+@registry.register_sensor(name="InstructionSensor")
+class InstructionSensor(Sensor):
+    def __init__(self, **kwargs):
+        self.uuid = "instruction"
+        self.observation_space = spaces.Discrete(10000)
+
+    def _get_uuid(self, *args: Any, **kwargs: Any) -> str:
+        return self.uuid
+
+    def _get_observation(
+        self,
+        observations: Dict[str, Observations],
+        episode: VLNEpisode,
+        **kwargs
+    ):
+        return {
+            "text": episode.instruction.instruction_text,
+            "tokens": episode.instruction.instruction_tokens,
+            "trajectory_id": episode.trajectory_id,
+        }
+
+    def get_observation(self, **kwargs):
+        return self._get_observation(**kwargs)
+    
 @registry.register_sensor
 class RxRInstructionSensor(Sensor):
 

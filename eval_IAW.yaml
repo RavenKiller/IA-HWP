@@ -1,7 +1,7 @@
 BASE_TASK_CONFIG_PATH: habitat_extensions/config/vlnce_task_bertidx.yaml
-SIMULATOR_GPU_IDS: [4]
-TORCH_GPU_ID: 4
-TORCH_GPU_IDS: [4]
+SIMULATOR_GPU_IDS: [0]
+TORCH_GPU_ID: 0
+TORCH_GPU_IDS: [0]
 # VIDEO_OPTION: ['disk']
 # VIDEO_DIR: videos/iaw-law/unseen
 TRAINER_NAME: schedulesampler-IAW
@@ -10,7 +10,7 @@ NUM_ENVIRONMENTS: 1
 TENSORBOARD_DIR: logs/tensorboard_dirs/
 CHECKPOINT_FOLDER: logs/checkpoints/
 EVAL_CKPT_PATH_DIR: logs/checkpoints/
-RESULTS_DIR: logs/eval_results/
+RESULTS_DIR: logs/eval_results_v2/
 SIMULATOR:
   HABITAT_SIM_V0:
     ALLOW_SLIDING: True

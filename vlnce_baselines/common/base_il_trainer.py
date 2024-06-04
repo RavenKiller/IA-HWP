@@ -230,7 +230,8 @@ class BaseVLNCETrainer(BaseILTrainer):
             config.TASK_CONFIG.TASK.MEASUREMENTS.append("TOP_DOWN_MAP_VLNCE")
             config.TASK_CONFIG.TASK.MEASUREMENTS.append("COLLISIONS")
         config.freeze()
-        ckpt_index = checkpoint_path.split('/')[-1].split('.')[1]
+        # ckpt_index = checkpoint_path.split('/')[-1].split('.')[1]
+        ckpt_index = "_".join(checkpoint_path.split('/')[-1].split('.')[:-1])
         if config.EVAL.SAVE_RESULTS:
             fname = os.path.join(
                 config.RESULTS_DIR,

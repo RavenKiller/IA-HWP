@@ -8,7 +8,7 @@ NUM_ENVIRONMENTS: 1
 TENSORBOARD_DIR: logs/tensorboard_dirs/
 CHECKPOINT_FOLDER: logs/checkpoints/
 EVAL_CKPT_PATH_DIR: logs/checkpoints/
-RESULTS_DIR: logs/eval_results/
+RESULTS_DIR: logs/eval_results_v2/
 SIMULATOR:
   HABITAT_SIM_V0:
     ALLOW_SLIDING: False
