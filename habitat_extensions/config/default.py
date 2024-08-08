@@ -10,12 +10,12 @@ _C.defrost()
 # CUSTOM ACTION: HIGHTOLOWEVAL ACTION
 # ----------------------------------------------------------------------------
 _C.TASK.ACTIONS.HIGHTOLOWEVAL = CN()
-_C.TASK.ACTIONS.HIGHTOLOWEVAL.TYPE = 'MoveHighToLowActionEval'
+_C.TASK.ACTIONS.HIGHTOLOWEVAL.TYPE = "MoveHighToLowActionEval"
 # ----------------------------------------------------------------------------
 # CUSTOM ACTION: HIGHTOLOW ACTION
 # ----------------------------------------------------------------------------
 _C.TASK.ACTIONS.HIGHTOLOW = CN()
-_C.TASK.ACTIONS.HIGHTOLOW.TYPE = 'MoveHighToLowAction'
+_C.TASK.ACTIONS.HIGHTOLOW.TYPE = "MoveHighToLowAction"
 # ----------------------------------------------------------------------------
 # GPS SENSOR
 # ----------------------------------------------------------------------------
@@ -97,7 +97,7 @@ _C.TASK.STEPS_TAKEN.TYPE = "StepsTaken"
 # POSITION MEASUREMENT For faster eval
 # ----------------------------------------------------------------------------
 _C.TASK.POSITION = CN()
-_C.TASK.POSITION.TYPE = 'Position'
+_C.TASK.POSITION.TYPE = "Position"
 # -----------------------------------------------------------------------------
 # TOP_DOWN_MAP_VLNCE MEASUREMENT
 # -----------------------------------------------------------------------------

@@ -41,9 +41,7 @@ def observations_to_image(observation: Dict, info: Dict) -> np.ndarray:
         )
         egocentric_view.append(depth_map)
 
-    assert (
-        len(egocentric_view) > 0
-    ), "Expected at least one visual sensor enabled."
+    assert len(egocentric_view) > 0, "Expected at least one visual sensor enabled."
     egocentric_view = np.concatenate(egocentric_view, axis=1)
 
     # draw collision

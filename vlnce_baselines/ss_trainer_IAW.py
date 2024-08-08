@@ -71,11 +71,13 @@ def reduce_loss(loss, world_size):
         loss /= world_size
     return loss
 
+
 def fix_nan(*args):
     for arg in args:
         if torch.isnan(arg):
             print("Nan loss")
             arg.fill_(0)
+
 
 def independent_roll(mat, rolls):
     """Roll for each rows"""
@@ -234,7 +236,9 @@ class SSTrainer(BaseVLNCETrainer):
             return (-1, -1, -1, -1)
 
         observations = extract_instruction_tokens(
-            observations, self.config.TASK_CONFIG.TASK.INSTRUCTION_SENSOR_UUID,  return_mask=True
+            observations,
+            self.config.TASK_CONFIG.TASK.INSTRUCTION_SENSOR_UUID,
+            return_mask=True,
         )
         batch = batch_obs(observations, self.device)
         batch = apply_obs_transforms_batch(batch, self.obs_transforms)
@@ -320,7 +324,11 @@ class SSTrainer(BaseVLNCETrainer):
             # 辅助损失 direction aware loss
             self.dir_weight = self.dir_weight.to(cand_rgb.device)
             self.stop_weight = self.stop_weight.to(cand_rgb.device)
-            dir_weight = torch.reshape(self.dir_weight, (1, 13)).expand(cand_rgb.size(0), 13).clone()
+            dir_weight = (
+                torch.reshape(self.dir_weight, (1, 13))
+                .expand(cand_rgb.size(0), 13)
+                .clone()
+            )
             stop_weight = self.stop_weight
             last_dist = np.zeros(len(batch_angles), np.float32)
             # cand_dists_to_law = [[] for _ in range(len(batch_angles))]
@@ -393,7 +401,7 @@ class SSTrainer(BaseVLNCETrainer):
                 # roll the weights to correct directions
                 dir_weight[:, 0:12] = independent_roll(dir_weight[:, 0:12], rolls)
                 # return to the logit score
-                dir_weight[oracle_actions.squeeze(1)==12] = stop_weight.clone()
+                dir_weight[oracle_actions.squeeze(1) == 12] = stop_weight.clone()
                 new_score = logit_score * dir_weight
                 new_score = new_score.sum(axis=1)
                 angle_reward += torch.sum(new_score)
@@ -511,7 +519,7 @@ class SSTrainer(BaseVLNCETrainer):
             observations = extract_instruction_tokens(
                 observations,
                 self.config.TASK_CONFIG.TASK.INSTRUCTION_SENSOR_UUID,
-                return_mask=True
+                return_mask=True,
             )
 
             batch = batch_obs(observations, self.device)
@@ -686,7 +694,8 @@ class SSTrainer(BaseVLNCETrainer):
                     else range(batches_per_epoch)
                 )
                 self.ratio = np.power(
-                    self.config.IL.schedule_ratio, (epoch+1) / self.config.IL.decay_time
+                    self.config.IL.schedule_ratio,
+                    (epoch + 1) / self.config.IL.decay_time,
                 )
 
                 self.trained_episodes = []

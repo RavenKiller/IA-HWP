@@ -124,6 +124,7 @@ def construct_envs_auto_reset_false(
 ) -> VectorEnv:
     return construct_envs(config, env_class, auto_reset_done=False)
 
+
 def construct_envs_for_rl(
     config: Config,
     env_class: Type[Union[Env, RLEnv]],

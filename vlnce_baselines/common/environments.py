@@ -32,8 +32,7 @@ class VLNCEDaggerEnv(habitat.RLEnv):
     def get_metrics(self):
         return self.habitat_env.get_metrics()
 
-    def get_geodesic_dist(self, 
-        node_a: List[float], node_b: List[float]):
+    def get_geodesic_dist(self, node_a: List[float], node_b: List[float]):
         return self._env.sim.geodesic_distance(node_a, node_b)
 
     def check_navigability(self, node: List[float]):
@@ -51,79 +50,96 @@ class VLNCEDaggerEnv(habitat.RLEnv):
             "stop": self._env.task.is_stop_called,
         }
 
-    def get_observation_at(self,
+    def get_observation_at(
+        self,
         source_position: List[float],
         source_rotation: List[Union[int, np.float64]],
-        keep_agent_at_new_pose: bool = False):
+        keep_agent_at_new_pose: bool = False,
+    ):
         return self._env.sim.get_observations_at(
-            source_position,
-            source_rotation,
-            keep_agent_at_new_pose)
+            source_position, source_rotation, keep_agent_at_new_pose
+        )
 
     def observations_by_angles(self, angle_list: List[float]):
-        r'''for getting observations from desired angles
-        requires rad, positive represents anticlockwise'''
+        r"""for getting observations from desired angles
+        requires rad, positive represents anticlockwise"""
         obs = []
         sim = self._env.sim
         init_state = sim.get_agent_state()
         prev_angle = 0
         left_action = HabitatSimActions.TURN_LEFT
-        init_amount = sim.get_agent(0).agent_config.action_space[left_action].actuation.amount # turn left
+        init_amount = (
+            sim.get_agent(0).agent_config.action_space[left_action].actuation.amount
+        )  # turn left
         for angle in angle_list:
-            sim.get_agent(0).agent_config.action_space[left_action].actuation.amount = (angle-prev_angle)*180/np.pi
+            sim.get_agent(0).agent_config.action_space[left_action].actuation.amount = (
+                (angle - prev_angle) * 180 / np.pi
+            )
             obs.append(sim.step(left_action))
             prev_angle = angle
         sim.set_agent_state(init_state.position, init_state.rotation)
-        sim.get_agent(0).agent_config.action_space[left_action].actuation.amount = init_amount
+        sim.get_agent(0).agent_config.action_space[
+            left_action
+        ].actuation.amount = init_amount
         return obs
 
     def current_dist_to_goal(self):
         sim = self._env.sim
         init_state = sim.get_agent_state()
         init_distance = self._env.sim.geodesic_distance(
-            init_state.position, self._env.current_episode.goals[0].position,
+            init_state.position,
+            self._env.current_episode.goals[0].position,
         )
         return init_distance
 
     def cand_dist_to_goal(self, angle: float, forward: float):
-        r'''get resulting distance to goal by executing 
-        a candidate action'''
+        r"""get resulting distance to goal by executing
+        a candidate action"""
 
         sim = self._env.sim
         init_state = sim.get_agent_state()
 
         forward_action = HabitatSimActions.MOVE_FORWARD
-        init_forward = sim.get_agent(0).agent_config.action_space[
-            forward_action].actuation.amount
+        init_forward = (
+            sim.get_agent(0).agent_config.action_space[forward_action].actuation.amount
+        )
 
-        theta = np.arctan2(init_state.rotation.imag[1], 
-            init_state.rotation.real) + angle / 2
+        theta = (
+            np.arctan2(init_state.rotation.imag[1], init_state.rotation.real)
+            + angle / 2
+        )
         rotation = np.quaternion(np.cos(theta), 0, np.sin(theta), 0)
         sim.set_agent_state(init_state.position, rotation)
 
-        ksteps = int(forward//init_forward)
+        ksteps = int(forward // init_forward)
         for k in range(ksteps):
             sim.step_without_obs(forward_action)
         post_state = sim.get_agent_state()
         post_distance = self._env.sim.geodesic_distance(
-            post_state.position, self._env.current_episode.goals[0].position,
+            post_state.position,
+            self._env.current_episode.goals[0].position,
         )
 
         # reset agent state
         sim.set_agent_state(init_state.position, init_state.rotation)
-        
+
         return post_distance
 
     def change_current_path(self, new_path: Any, collisions: Any):
-        '''just for recording current path in high to low'''
-        if 'current_path' not in self._env.current_episode.info.keys():
-            self._env.current_episode.info['current_path'] = [np.array(self._env.current_episode.start_position)]
-        self._env.current_episode.info['current_path'] += new_path
-        if 'collisions' not in self._env.current_episode.info.keys():
-            self._env.current_episode.info['collisions'] = []
-        self._env.current_episode.info['collisions'] += collisions
-        
+        """just for recording current path in high to low"""
+        if "current_path" not in self._env.current_episode.info.keys():
+            self._env.current_episode.info["current_path"] = [
+                np.array(self._env.current_episode.start_position)
+            ]
+        self._env.current_episode.info["current_path"] += new_path
+        if "collisions" not in self._env.current_episode.info.keys():
+            self._env.current_episode.info["collisions"] = []
+        self._env.current_episode.info["collisions"] += collisions
+
+
 """ 用于产生全局地图的新环境: 重写了回调函数, 可以返回到达任意点的cand"""
+
+
 @baseline_registry.register_env(name="VLNCEDaggerMapEnv")
 class VLNCEDaggerMapEnv(habitat.RLEnv):
     def __init__(self, config: Config, dataset: Optional[Dataset] = None):
@@ -146,8 +162,7 @@ class VLNCEDaggerMapEnv(habitat.RLEnv):
     def get_metrics(self):
         return self.habitat_env.get_metrics()
 
-    def get_geodesic_dist(self, 
-        node_a: List[float], node_b: List[float]):
+    def get_geodesic_dist(self, node_a: List[float], node_b: List[float]):
         return self._env.sim.geodesic_distance(node_a, node_b)
 
     def check_navigability(self, node: List[float]):
@@ -165,94 +180,110 @@ class VLNCEDaggerMapEnv(habitat.RLEnv):
             "stop": self._env.task.is_stop_called,
         }
 
-    def get_observation_at(self,
+    def get_observation_at(
+        self,
         source_position: List[float],
         source_rotation: List[Union[int, np.float64]],
-        keep_agent_at_new_pose: bool = False):
+        keep_agent_at_new_pose: bool = False,
+    ):
         return self._env.sim.get_observations_at(
-            source_position,
-            source_rotation,
-            keep_agent_at_new_pose)
+            source_position, source_rotation, keep_agent_at_new_pose
+        )
 
     def observations_by_angles(self, angle_list: List[float]):
-        r'''for getting observations from desired angles
-        requires rad, positive represents anticlockwise'''
+        r"""for getting observations from desired angles
+        requires rad, positive represents anticlockwise"""
         obs = []
         sim = self._env.sim
         init_state = sim.get_agent_state()
         prev_angle = 0
         left_action = HabitatSimActions.TURN_LEFT
-        init_amount = sim.get_agent(0).agent_config.action_space[left_action].actuation.amount # turn left
+        init_amount = (
+            sim.get_agent(0).agent_config.action_space[left_action].actuation.amount
+        )  # turn left
         for angle in angle_list:
-            sim.get_agent(0).agent_config.action_space[left_action].actuation.amount = (angle-prev_angle)*180/np.pi
+            sim.get_agent(0).agent_config.action_space[left_action].actuation.amount = (
+                (angle - prev_angle) * 180 / np.pi
+            )
             obs.append(sim.step(left_action))
             prev_angle = angle
         sim.set_agent_state(init_state.position, init_state.rotation)
-        sim.get_agent(0).agent_config.action_space[left_action].actuation.amount = init_amount
+        sim.get_agent(0).agent_config.action_space[
+            left_action
+        ].actuation.amount = init_amount
         return obs
 
     def current_dist_to_goal(self):
         sim = self._env.sim
         init_state = sim.get_agent_state()
         init_distance = self._env.sim.geodesic_distance(
-            init_state.position, self._env.current_episode.goals[0].position,
+            init_state.position,
+            self._env.current_episode.goals[0].position,
         )
         return init_distance
 
     def cand_dist_to_goal(self, angle: float, forward: float):
-        r'''get resulting distance to goal by executing 
-        a candidate action'''
+        r"""get resulting distance to goal by executing
+        a candidate action"""
 
         sim = self._env.sim
         init_state = sim.get_agent_state()
 
         forward_action = HabitatSimActions.MOVE_FORWARD
-        init_forward = sim.get_agent(0).agent_config.action_space[
-            forward_action].actuation.amount
+        init_forward = (
+            sim.get_agent(0).agent_config.action_space[forward_action].actuation.amount
+        )
 
-        theta = np.arctan2(init_state.rotation.imag[1], 
-            init_state.rotation.real) + angle / 2
+        theta = (
+            np.arctan2(init_state.rotation.imag[1], init_state.rotation.real)
+            + angle / 2
+        )
         rotation = np.quaternion(np.cos(theta), 0, np.sin(theta), 0)
         sim.set_agent_state(init_state.position, rotation)
 
-        ksteps = int(forward//init_forward)
+        ksteps = int(forward // init_forward)
         for k in range(ksteps):
             sim.step_without_obs(forward_action)
         post_state = sim.get_agent_state()
         post_distance = self._env.sim.geodesic_distance(
-            post_state.position, self._env.current_episode.goals[0].position,
+            post_state.position,
+            self._env.current_episode.goals[0].position,
         )
 
         # reset agent state
         sim.set_agent_state(init_state.position, init_state.rotation)
-        
+
         return post_distance
-    
+
     def cand_dist_to_law(self, angle: float, forward: float, pos: List[float]):
-        r'''get resulting distance to law by executing 
-        a candidate action'''
+        r"""get resulting distance to law by executing
+        a candidate action"""
 
         sim = self._env.sim
         init_state = sim.get_agent_state()
 
         forward_action = HabitatSimActions.MOVE_FORWARD
-        init_forward = sim.get_agent(0).agent_config.action_space[
-            forward_action].actuation.amount # 默认0.25
+        init_forward = (
+            sim.get_agent(0).agent_config.action_space[forward_action].actuation.amount
+        )  # 默认0.25
 
-        theta = np.arctan2(init_state.rotation.imag[1], 
-            init_state.rotation.real) + angle / 2
+        theta = (
+            np.arctan2(init_state.rotation.imag[1], init_state.rotation.real)
+            + angle / 2
+        )
         rotation = np.quaternion(np.cos(theta), 0, np.sin(theta), 0)
         sim.set_agent_state(init_state.position, rotation)
 
         # 到waypoint的距离
-        ksteps = int(forward//init_forward)
+        ksteps = int(forward // init_forward)
         for k in range(ksteps):
             sim.step_without_obs(forward_action)
         post_state = sim.get_agent_state()
         post_distance = self._env.sim.geodesic_distance(
-            post_state.position, pos,
+            post_state.position,
+            pos,
         )
-        
+
         # 测试可导航步
         # navigability_steps = int(navigability_forward // init_forward) # 3步
         # for k in range(navigability_steps - ksteps):
@@ -262,17 +293,20 @@ class VLNCEDaggerMapEnv(habitat.RLEnv):
 
         # reset agent state
         sim.set_agent_state(init_state.position, init_state.rotation)
-        
+
         return post_distance
 
     def change_current_path(self, new_path: Any, collisions: Any):
-        '''just for recording current path in high to low'''
-        if 'current_path' not in self._env.current_episode.info.keys():
-            self._env.current_episode.info['current_path'] = [np.array(self._env.current_episode.start_position)]
-        self._env.current_episode.info['current_path'] += new_path
-        if 'collisions' not in self._env.current_episode.info.keys():
-            self._env.current_episode.info['collisions'] = []
-        self._env.current_episode.info['collisions'] += collisions
+        """just for recording current path in high to low"""
+        if "current_path" not in self._env.current_episode.info.keys():
+            self._env.current_episode.info["current_path"] = [
+                np.array(self._env.current_episode.start_position)
+            ]
+        self._env.current_episode.info["current_path"] += new_path
+        if "collisions" not in self._env.current_episode.info.keys():
+            self._env.current_episode.info["collisions"] = []
+        self._env.current_episode.info["collisions"] += collisions
+
 
 @baseline_registry.register_env(name="VLNCEInferenceEnv")
 class VLNCEInferenceEnv(habitat.RLEnv):

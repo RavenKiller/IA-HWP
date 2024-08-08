@@ -53,8 +53,7 @@ class CenterCropperPerSensor(ObservationTransformer):
         for key in observation_space.spaces:
             if (
                 key in self.sensor_crops
-                and observation_space.spaces[key].shape[-3:-1]
-                != self.sensor_crops[key]
+                and observation_space.spaces[key].shape[-3:-1] != self.sensor_crops[key]
             ):
                 h, w = get_image_height_width(
                     observation_space.spaces[key], channels_last=True
@@ -88,6 +87,7 @@ class CenterCropperPerSensor(ObservationTransformer):
     def from_config(cls, config: Config):
         cc_config = config.RL.POLICY.OBS_TRANSFORMS.CENTER_CROPPER_PER_SENSOR
         return cls(cc_config.SENSOR_CROPS)
+
 
 @baseline_registry.register_obs_transformer()
 class ResizerPerSensor(ObservationTransformer):
@@ -157,9 +157,9 @@ class ResizerPerSensor(ObservationTransformer):
                 img = img.permute(0, 1, 4, 2, 3)
 
         h, w = size
-        img = torch.nn.functional.interpolate(
-            img.float(), size=(h, w), mode="area"
-        ).to(dtype=img.dtype)
+        img = torch.nn.functional.interpolate(img.float(), size=(h, w), mode="area").to(
+            dtype=img.dtype
+        )
         if self.channels_last:
             if len(img.shape) == 4:
                 # NCHW -> NHWC
@@ -172,13 +172,12 @@ class ResizerPerSensor(ObservationTransformer):
         return img
 
     @torch.no_grad()
-    def forward(
-        self, observations: Dict[str, torch.Tensor]
-    ) -> Dict[str, torch.Tensor]:
+    def forward(self, observations: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         observations.update(
             {
                 sensor: self._transform_obs(
-                    observations[sensor], self.sensor_resizes[sensor])
+                    observations[sensor], self.sensor_resizes[sensor]
+                )
                 for sensor in self.sensor_resizes
                 if sensor in observations
             }

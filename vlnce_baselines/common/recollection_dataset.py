@@ -35,22 +35,22 @@ class TeacherRecollectionDataset(torch.utils.data.IterableDataset):
         self._env_observations = None
 
         if config.IL.use_iw:
-            self.inflec_weights = torch.tensor(
-                [1.0, config.IL.inflection_weight_coef]
-            )
+            self.inflec_weights = torch.tensor([1.0, config.IL.inflection_weight_coef])
         else:
             self.inflec_weights = torch.tensor([1.0, 1.0])
 
         if self.config.IL.RECOLLECT_TRAINER.preload_trajectories_file:
             self.config.defrost()
-            self.config.IL.RECOLLECT_TRAINER.trajectories_file = \
-                self.config.IL.RECOLLECT_TRAINER.trajectories_file[
-                :-8] + '_w' + \
-                str(self.world_size) + '_r' + str(self.rank) + '.json.gz'
+            self.config.IL.RECOLLECT_TRAINER.trajectories_file = (
+                self.config.IL.RECOLLECT_TRAINER.trajectories_file[:-8]
+                + "_w"
+                + str(self.world_size)
+                + "_r"
+                + str(self.rank)
+                + ".json.gz"
+            )
             self.config.freeze()
-            with gzip.open(
-                config.IL.RECOLLECT_TRAINER.trajectories_file, "rt"
-            ) as f:
+            with gzip.open(config.IL.RECOLLECT_TRAINER.trajectories_file, "rt") as f:
                 self.trajectories = json.load(f)
         else:
             self.trajectories = self.collect_dataset()
@@ -163,23 +163,24 @@ class TeacherRecollectionDataset(torch.utils.data.IterableDataset):
 
             for i, action in enumerate(trajectory["actions"]):
                 prev_action = (
-                    trajectories[episode_id][i - 1][1]
-                    if i
-                    else HabitatSimActions.STOP
+                    trajectories[episode_id][i - 1][1] if i else HabitatSimActions.STOP
                 )
 
                 # [prev_action, action, oracle_action]
                 trajectories[episode_id].append([prev_action, action, action])
 
-        trajectories = dict(list(trajectories.items())[self.rank::self.world_size])
+        trajectories = dict(list(trajectories.items())[self.rank :: self.world_size])
         self.config.defrost()
-        self.config.IL.RECOLLECT_TRAINER.trajectories_file = \
-            self.config.IL.RECOLLECT_TRAINER.trajectories_file[:-8]+'_w'+ \
-            str(self.world_size)+'_r'+str(self.rank) + '.json.gz'
+        self.config.IL.RECOLLECT_TRAINER.trajectories_file = (
+            self.config.IL.RECOLLECT_TRAINER.trajectories_file[:-8]
+            + "_w"
+            + str(self.world_size)
+            + "_r"
+            + str(self.rank)
+            + ".json.gz"
+        )
         self.config.freeze()
-        with gzip.open(
-            self.config.IL.RECOLLECT_TRAINER.trajectories_file, "wt"
-        ) as f:
+        with gzip.open(self.config.IL.RECOLLECT_TRAINER.trajectories_file, "wt") as f:
             f.write(json.dumps(trajectories))
         return trajectories
 
@@ -195,9 +196,7 @@ class TeacherRecollectionDataset(torch.utils.data.IterableDataset):
             # return out
             return self._preload.popleft()
 
-        while (
-            len(self._preload) < self.config.IL.RECOLLECT_TRAINER.preload_size
-        ):
+        while len(self._preload) < self.config.IL.RECOLLECT_TRAINER.preload_size:
             current_episodes = self.envs.current_episodes()
             prev_eps = current_episodes
 
@@ -232,9 +231,9 @@ class TeacherRecollectionDataset(torch.utils.data.IterableDataset):
                     self._env_observations[i] = []
                     self.env_step[i] = 0
 
-                path_step = self.trajectories[
-                    str(current_episodes[i].episode_id)
-                ][self.env_step[i]]
+                path_step = self.trajectories[str(current_episodes[i].episode_id)][
+                    self.env_step[i]
+                ]
                 self._env_observations[i].append(
                     (
                         observations[i],
@@ -290,8 +289,6 @@ class TeacherRecollectionDataset(torch.utils.data.IterableDataset):
     def __iter__(self):
         worker_info = torch.utils.data.get_worker_info()
         if worker_info is not None:
-            assert (
-                worker_info.num_workers == 1
-            ), "multiple workers not supported."
+            assert worker_info.num_workers == 1, "multiple workers not supported."
 
         return self

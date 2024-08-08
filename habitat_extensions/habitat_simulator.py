@@ -45,6 +45,7 @@ from habitat.core.simulator import (
 )
 from habitat.core.spaces import Space
 
+
 # inherit habitat-lab/habitat/sims/habitat_simulator/habitat_simulator.py
 @registry.register_simulator(name="Sim-v1")
 class Simulator(HabitatSim):
@@ -59,9 +60,11 @@ class Simulator(HabitatSim):
     def __init__(self, config: Config) -> None:
         super().__init__(config)
 
-    def step_without_obs(self,
+    def step_without_obs(
+        self,
         action: Union[str, int, MutableMapping_T[int, Union[str, int]]],
-        dt: float = 1.0 / 60.0,):
+        dt: float = 1.0 / 60.0,
+    ):
         self._num_total_frames += 1
         if isinstance(action, MutableMapping):
             return_single = False

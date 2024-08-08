@@ -91,11 +91,12 @@ class InstructionEncoder(nn.Module):
         if self.config.final_state_only:  # default False
             return final_state.squeeze(0)
         else:
-            ctx = nn.utils.rnn.pad_packed_sequence(output, 
-                batch_first=True)[0].permute(0, 2, 1)
+            ctx = nn.utils.rnn.pad_packed_sequence(output, batch_first=True)[0].permute(
+                0, 2, 1
+            )
             all_lang_masks = (ctx == 0.0).all(dim=1)
             ctx = ctx.permute(0, 2, 1)
 
             # ctx = self.drop(ctx)
 
-            return ctx, all_lang_masks 
+            return ctx, all_lang_masks

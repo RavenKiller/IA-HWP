@@ -17,6 +17,7 @@ import pickle
 import gzip
 import json
 
+
 @registry.register_sensor(name="GlobalGPSSensor")
 class GlobalGPSSensor(Sensor):
     r"""The agents current location in the global coordinate frame
@@ -31,9 +32,7 @@ class GlobalGPSSensor(Sensor):
 
     cls_uuid: str = "globalgps"
 
-    def __init__(
-        self, sim: Simulator, config: Config, *args: Any, **kwargs: Any
-    ):
+    def __init__(self, sim: Simulator, config: Config, *args: Any, **kwargs: Any):
         self._sim = sim
         self._dimensionality = getattr(config, "DIMENSIONALITY", 2)
         assert self._dimensionality in [2, 3]
@@ -69,9 +68,7 @@ class ShortestPathSensor(Sensor):
 
     cls_uuid: str = "shortest_path_sensor"
 
-    def __init__(
-        self, sim: Simulator, config: Config, *args: Any, **kwargs: Any
-    ):
+    def __init__(self, sim: Simulator, config: Config, *args: Any, **kwargs: Any):
         super().__init__(config=config)
         if config.USE_ORIGINAL_FOLLOWER:
             self.follower = ShortestPathFollowerCompat(
@@ -83,6 +80,7 @@ class ShortestPathSensor(Sensor):
                 sim, config.GOAL_RADIUS, return_one_hot=False
             )
         # self._sim = sim
+
     def _get_uuid(self, *args: Any, **kwargs: Any):
         return self.cls_uuid
 
@@ -95,11 +93,7 @@ class ShortestPathSensor(Sensor):
     def get_observation(self, *args: Any, episode, **kwargs: Any):
         best_action = self.follower.get_next_action(episode.goals[0].position)
         return np.array(
-            [
-                best_action
-                if best_action is not None
-                else HabitatSimActions.STOP
-            ]
+            [best_action if best_action is not None else HabitatSimActions.STOP]
         )
 
 
@@ -114,9 +108,7 @@ class VLNOracleProgressSensor(Sensor):
 
     cls_uuid: str = "progress"
 
-    def __init__(
-        self, sim: Simulator, config: Config, *args: Any, **kwargs: Any
-    ):
+    def __init__(self, sim: Simulator, config: Config, *args: Any, **kwargs: Any):
         self._sim = sim
         super().__init__(config=config)
 
@@ -130,15 +122,12 @@ class VLNOracleProgressSensor(Sensor):
     def _get_observation_space(self, *args: Any, **kwargs: Any):
         return spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32)
 
-    def get_observation(
-        self, observations, *args: Any, episode, **kwargs: Any
-    ):
+    def get_observation(self, observations, *args: Any, episode, **kwargs: Any):
         current_position = self._sim.get_agent_state().position.tolist()
 
         distance_to_target = self._sim.geodesic_distance(
             current_position, episode.goals[0].position
         )
-
 
         if "geodesic_distance" not in episode.info.keys():
             distance_from_start = self._sim.geodesic_distance(
@@ -148,9 +137,10 @@ class VLNOracleProgressSensor(Sensor):
 
         distance_from_start = episode.info["geodesic_distance"]
 
-        progress =  (distance_from_start - distance_to_target) / distance_from_start
+        progress = (distance_from_start - distance_to_target) / distance_from_start
 
-        return np.array(progress, dtype = np.float32)
+        return np.array(progress, dtype=np.float32)
+
 
 @registry.register_sensor
 class VLNOracleActionGeodesicSensor(Sensor):
@@ -166,9 +156,11 @@ class VLNOracleActionGeodesicSensor(Sensor):
         gt_path = config.GT_PATH.format(split=config.SPLIT)
         with gzip.open(gt_path, "rt") as f:
             self.gt_waypoint_locations = json.load(f)
-        
+
         self.is_sparse = getattr(config, "IS_SPARSE", True)
-        self.num_inter_waypoints = getattr(config, "NUM_WAYPOINTS", 0)   # Set number of intermediate waypoints
+        self.num_inter_waypoints = getattr(
+            config, "NUM_WAYPOINTS", 0
+        )  # Set number of intermediate waypoints
         self.goal_radius = getattr(config, "GOAL_RADIUS", 0.5)
 
         super().__init__(config=config)
@@ -183,7 +175,11 @@ class VLNOracleActionGeodesicSensor(Sensor):
         self.next_way_action = 0
         self.episode_id_action = None
 
-        self.possible_actions= [HabitatSimActions.MOVE_FORWARD, HabitatSimActions.TURN_LEFT, HabitatSimActions.TURN_RIGHT]
+        self.possible_actions = [
+            HabitatSimActions.MOVE_FORWARD,
+            HabitatSimActions.TURN_LEFT,
+            HabitatSimActions.TURN_RIGHT,
+        ]
 
     def _get_uuid(self, *args: Any, **kwargs: Any):
         return "vln_law_action_sensor"
@@ -195,22 +191,26 @@ class VLNOracleActionGeodesicSensor(Sensor):
         return spaces.Box(low=0.0, high=100, shape=(1,), dtype=np.float)
 
     def get_observation(self, *args: Any, episode, **kwargs: Any):
-        
+
         if self.num_inter_waypoints > 0:
-            locs = self.gt_waypoint_locations[str(episode.episode_id)]["locations"] #episode.reference_path
-            ep_path_length = self._sim.geodesic_distance(locs[0], episode.goals[0].position)
-            
+            locs = self.gt_waypoint_locations[str(episode.episode_id)][
+                "locations"
+            ]  # episode.reference_path
+            ep_path_length = self._sim.geodesic_distance(
+                locs[0], episode.goals[0].position
+            )
+
             way_locations = [locs[0]]
             count = 0
-            dist = ep_path_length / (self.num_inter_waypoints+1)
+            dist = ep_path_length / (self.num_inter_waypoints + 1)
             for way in locs[:-1]:
                 d = self._sim.geodesic_distance(locs[0], way)
                 if d >= dist:
                     way_locations.append(way)
-                    if count >= (self.num_inter_waypoints-1):
+                    if count >= (self.num_inter_waypoints - 1):
                         break
                     count += 1
-                    dist += ep_path_length / (self.num_inter_waypoints+1)
+                    dist += ep_path_length / (self.num_inter_waypoints + 1)
 
             way_locations.append(episode.goals[0].position)
 
@@ -220,18 +220,18 @@ class VLNOracleActionGeodesicSensor(Sensor):
                 way_locations = episode.reference_path
             else:
                 # Dense supervision of waypoints
-                way_locations = self.gt_waypoint_locations[str(episode.episode_id)]["locations"]
+                way_locations = self.gt_waypoint_locations[str(episode.episode_id)][
+                    "locations"
+                ]
 
         current_position = self._sim.get_agent_state().position.tolist()
-        
+
         nearest_dist = float("inf")
         nearest_way = way_locations[-1]
-        nearest_way_count = len(way_locations)-1
+        nearest_way_count = len(way_locations) - 1
         # way locations 就是参考路径
         for ind, way in reversed(list(enumerate(way_locations))):
-            distance_to_way = self._sim.geodesic_distance(
-                current_position, way
-            )
+            distance_to_way = self._sim.geodesic_distance(current_position, way)
             if distance_to_way > self.goal_radius and distance_to_way < nearest_dist:
                 dist_way_to_goal = self._sim.geodesic_distance(
                     way, episode.goals[0].position
@@ -249,16 +249,17 @@ class VLNOracleActionGeodesicSensor(Sensor):
         if best_action is None:
             while best_action is None:
                 # if the agent has reached the current waypoint then update the next waypoint
-                if nearest_way_count == (len(way_locations)-1):
+                if nearest_way_count == (len(way_locations) - 1):
                     return np.array([HabitatSimActions.STOP])
-                
+
                 nearest_way_count = nearest_way_count + 1
                 nearest_way = way_locations[nearest_way_count]
                 best_action = self.follower.get_next_action(nearest_way)
-            
+
             return np.array([nearest_way])
-            
+
         return np.array([nearest_way])
+
 
 @registry.register_sensor(name="InstructionSensor")
 class InstructionSensor(Sensor):
@@ -270,10 +271,7 @@ class InstructionSensor(Sensor):
         return self.uuid
 
     def _get_observation(
-        self,
-        observations: Dict[str, Observations],
-        episode: VLNEpisode,
-        **kwargs
+        self, observations: Dict[str, Observations], episode: VLNEpisode, **kwargs
     ):
         return {
             "text": episode.instruction.instruction_text,
@@ -283,15 +281,14 @@ class InstructionSensor(Sensor):
 
     def get_observation(self, **kwargs):
         return self._get_observation(**kwargs)
-    
+
+
 @registry.register_sensor
 class RxRInstructionSensor(Sensor):
 
     cls_uuid: str = "rxr_instruction"
 
-    def __init__(
-        self, sim: Simulator, config: Config, *args: Any, **kwargs: Any
-    ):
+    def __init__(self, sim: Simulator, config: Config, *args: Any, **kwargs: Any):
         self.features_path = config.features_path
         super().__init__(config=config)
 
@@ -339,9 +336,7 @@ class VLNMapWaypointSensor(Sensor):
 
     cls_uuid: str = "map_waypoint"
 
-    def __init__(
-        self, sim: Simulator, config: Config, *args: Any, **kwargs: Any
-    ):
+    def __init__(self, sim: Simulator, config: Config, *args: Any, **kwargs: Any):
         self._sim = sim
         self._config = config
         with open(self._config.GRAPHS_FILE, "rb") as f:
@@ -358,7 +353,7 @@ class VLNMapWaypointSensor(Sensor):
         return spaces.Box(
             low=np.finfo(np.float32).min,
             high=np.finfo(np.float32).max,
-            shape=(2, 5), # 不超过3m距离的点
+            shape=(2, 5),  # 不超过3m距离的点
             dtype=np.float32,
         )
 
@@ -374,44 +369,39 @@ class VLNMapWaypointSensor(Sensor):
         agent_position = self._sim.get_agent_state().position
         agent_angle = self.get_polar_angle()
         scene_id = episode.scene_id.split("/")[-1].split(".")[0]
-        
-        # 距离agent最近的 MP3D START NODE 
+
+        # 距离agent最近的 MP3D START NODE
         self._nearest_node = maps.get_nearest_node(
             self._conn_graphs[scene_id], np.take(agent_position, (0, 2))
         )
         # 该节点的位置(图)
-        nn_position = self._conn_graphs[self._scene_id].nodes[
-            self._nearest_node
-        ]["position"]
-        # 该节点的邻接信息
-        nn_conj = self._conn_graphs[self._scene_id].adj[
-            self._nearest_node
+        nn_position = self._conn_graphs[self._scene_id].nodes[self._nearest_node][
+            "position"
         ]
+        # 该节点的邻接信息
+        nn_conj = self._conn_graphs[self._scene_id].adj[self._nearest_node]
         i = 0
         for wp in nn_conj:
-            dis = nn_conj[wp]["weight"] # 邻接的边长
+            dis = nn_conj[wp]["weight"]  # 邻接的边长
             wp_pos = self._conn_graphs[self._scene_id].nodes[wp]["position"]
             r, phi = self.compute_dist_curpos2wp(agent_position, wp_pos, agent_angle)
-            if(r < 3):
+            if r < 3:
                 waypoints[i][0] = r
                 waypoints[i][1] = phi
                 i += 1
-        return waypoints 
+        return waypoints
 
     def compute_dist_curpos2wp(self, agent_pos, wp_pos, agent_angle):
         # 计算wp_pos距离agent_pos的距离及角度
         agent_pos = np.take(agent_pos, (0, 2))
         wp_pos = np.take(wp_pos, (0, 2))
-        r = np.linalg.norm(
-            np.array(agent_pos) - np.array(wp_pos), ord=2
-        )
+        r = np.linalg.norm(np.array(agent_pos) - np.array(wp_pos), ord=2)
         wp_angle = np.arctan2(agent_pos[0] - wp_pos[0], agent_pos[1] - wp_pos[1])
         wp_angle = np.pi - wp_angle
         # 从polar坐标系 相对角 转为 agent坐标系相对角
         phi = (wp_angle - agent_angle + 2 * np.pi) % (2 * np.pi)
-        
-        return r, phi
 
+        return r, phi
 
     def get_polar_angle(self):
         agent_state = self._sim.get_agent_state()
@@ -420,7 +410,7 @@ class VLNMapWaypointSensor(Sensor):
 
         heading_vector = quaternion_rotate_vector(
             ref_rotation.inverse(), np.array([0, 0, -1])
-        ) # 四元数 转 旋转向量
+        )  # 四元数 转 旋转向量
 
         phi = cartesian_to_polar(-heading_vector[2], heading_vector[0])[1]
         z_neg_z_flip = np.pi

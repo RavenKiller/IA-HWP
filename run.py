@@ -5,14 +5,17 @@ import random
 import os
 import numpy as np
 import torch
+
 # from habitat_sim import logger
 import sys
+
 # sys.path.append('/home/vlnce/habitat-lab-v0.2.1')
 from habitat_baselines.common.baseline_registry import baseline_registry
 
 import habitat_extensions  # noqa: F401
 import vlnce_baselines  # noqa: F401
 from vlnce_baselines.config.default import get_config
+
 # from vlnce_baselines.nonlearning_agents import (
 #     evaluate_agent,
 #     nonlearning_inference,
@@ -24,6 +27,7 @@ os.environ["MAGNUM_LOG"] = "quiet"
 os.environ["GLOG_minloglevel"] = "2"
 os.environ["HABITAT_SIM_LOG"] = "quiet"
 torch.autograd.set_detect_anomaly(True)
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -52,13 +56,14 @@ def main():
         nargs=argparse.REMAINDER,
         help="Modify config options from command line",
     )
-    parser.add_argument('--local_rank', type=int, default=0, help="local gpu id")
+    parser.add_argument("--local_rank", type=int, default=0, help="local gpu id")
     args = parser.parse_args()
     run_exp(**vars(args))
 
 
-def run_exp(exp_name: str, exp_config: str, 
-            run_type: str, opts=None, local_rank=None) -> None:
+def run_exp(
+    exp_name: str, exp_config: str, run_type: str, opts=None, local_rank=None
+) -> None:
     r"""Runs experiment given mode and config
 
     Args:
@@ -72,7 +77,7 @@ def run_exp(exp_name: str, exp_config: str,
     dist_train = True
     config = get_config(exp_config, opts)
     if dist_train:
-        dist.init_process_group(backend='nccl')
+        dist.init_process_group(backend="nccl")
     config.defrost()
 
     config.TENSORBOARD_DIR += exp_name
@@ -80,7 +85,7 @@ def run_exp(exp_name: str, exp_config: str,
     if os.path.isdir(config.EVAL_CKPT_PATH_DIR):
         config.EVAL_CKPT_PATH_DIR += exp_name
     config.RESULTS_DIR += exp_name
-    config.LOG_FILE = exp_name + '_' + config.LOG_FILE
+    config.LOG_FILE = exp_name + "_" + config.LOG_FILE
 
     config.local_rank = dist.get_rank()
     if dist_train:
@@ -116,6 +121,7 @@ def run_exp(exp_name: str, exp_config: str,
         trainer.eval()
     elif run_type == "inference":
         trainer.inference()
+
 
 if __name__ == "__main__":
     main()

@@ -96,16 +96,16 @@ class VLNCEDatasetV1(Dataset):
 
         if config.EPISODES_ALLOWED is not None:
             ep_ids_before = {ep.episode_id for ep in self.episodes}
-            ep_ids_to_purge = ep_ids_before - set([ int(id) for id in config.EPISODES_ALLOWED])
+            ep_ids_to_purge = ep_ids_before - set(
+                [int(id) for id in config.EPISODES_ALLOWED]
+            )
             self.episodes = [
                 episode
                 for episode in self.episodes
                 if episode.episode_id not in ep_ids_to_purge
             ]
 
-    def from_json(
-        self, json_str: str, scenes_dir: Optional[str] = None
-    ) -> None:
+    def from_json(self, json_str: str, scenes_dir: Optional[str] = None) -> None:
 
         deserialized = json.loads(json_str)
         self.instruction_vocab = VocabDict(
@@ -171,9 +171,7 @@ class RxRVLNCEDatasetV1(Dataset):
     @classmethod
     def check_config_paths_exist(cls, config: Config) -> bool:
         return all(
-            os.path.exists(
-                config.DATA_PATH.format(split=config.SPLIT, role=role)
-            )
+            os.path.exists(config.DATA_PATH.format(split=config.SPLIT, role=role))
             for role in cls.extract_roles_from_config(config)
         ) and os.path.exists(config.SCENES_DIR)
 
@@ -215,9 +213,7 @@ class RxRVLNCEDatasetV1(Dataset):
                 if episode.episode_id not in ep_ids_to_purge
             ]
 
-    def from_json(
-        self, json_str: str, scenes_dir: Optional[str] = None
-    ) -> None:
+    def from_json(self, json_str: str, scenes_dir: Optional[str] = None) -> None:
 
         deserialized = json.loads(json_str)
 
@@ -232,9 +228,7 @@ class RxRVLNCEDatasetV1(Dataset):
 
                 episode.scene_id = os.path.join(scenes_dir, episode.scene_id)
 
-            episode.instruction = ExtendedInstructionData(
-                **episode.instruction
-            )
+            episode.instruction = ExtendedInstructionData(**episode.instruction)
             episode.instruction.split = self.config.SPLIT
             if episode.goals is not None:
                 for g_index, goal in enumerate(episode.goals):

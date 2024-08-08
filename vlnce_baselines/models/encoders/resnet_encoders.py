@@ -9,6 +9,7 @@ from habitat_baselines.rl.ddppo.policy import resnet
 from habitat_baselines.rl.ddppo.policy.resnet_policy import ResNetEncoder
 import torchvision
 
+
 class VlnResnetDepthEncoder(nn.Module):
     def __init__(
         self,
@@ -162,11 +163,13 @@ class TorchVisionResNet50(nn.Module):
             # self.activation = nn.ReLU()
             None
         else:
+
             class SpatialAvgPool(nn.Module):
                 def forward(self, x):
                     x = F.adaptive_avg_pool2d(x, (4, 4))
 
                     return x
+
             self.cnn.avgpool = SpatialAvgPool()
             self.cnn.fc = nn.Sequential()
             self.spatial_embeddings = nn.Embedding(4 * 4, 64)
@@ -179,11 +182,12 @@ class TorchVisionResNet50(nn.Module):
         # self.layer_extract = self.cnn._modules.get("avgpool")
 
         from torchvision import transforms
+
         self.rgb_transform = torch.nn.Sequential(
-            transforms.Resize([224,224]),
+            transforms.Resize([224, 224]),
             transforms.ConvertImageDtype(torch.float),
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
-            )
+        )
 
     @property
     def is_blind(self):
@@ -235,7 +239,9 @@ class TorchVisionResNet50(nn.Module):
                 .expand(b, self.spatial_embeddings.embedding_dim, h, w)
             )
 
-            return torch.cat([resnet_output, spatial_features], dim=1) #.to(self.device)
+            return torch.cat(
+                [resnet_output, spatial_features], dim=1
+            )  # .to(self.device)
             # return resnet_output, spatial_features
 
         else:

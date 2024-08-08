@@ -107,9 +107,7 @@ _C.IL.DAGGER.lmdb_fp16 = False
 _C.IL.DAGGER.lmdb_commit_frequency = 500
 # If True, load precomputed features directly from lmdb_features_dir.
 _C.IL.DAGGER.preload_lmdb_features = False
-_C.IL.DAGGER.lmdb_features_dir = (
-    "data/trajectories_dirs/debug/trajectories.lmdb"
-)
+_C.IL.DAGGER.lmdb_features_dir = "data/trajectories_dirs/debug/trajectories.lmdb"
 # -----------------------------------------------------------------------------
 # RL CONFIG
 # -----------------------------------------------------------------------------
@@ -166,9 +164,7 @@ _C.MODEL.DEPTH_ENCODER.output_size = 128
 # type of resnet to use
 _C.MODEL.DEPTH_ENCODER.backbone = "resnet50"
 # path to DDPPO resnet weights
-_C.MODEL.DEPTH_ENCODER.ddppo_checkpoint = (
-    "data/ddppo-models/gibson-2plus-resnet50.pth"
-)
+_C.MODEL.DEPTH_ENCODER.ddppo_checkpoint = "data/ddppo-models/gibson-2plus-resnet50.pth"
 
 _C.MODEL.STATE_ENCODER = CN()
 _C.MODEL.STATE_ENCODER.hidden_size = 512
@@ -218,9 +214,7 @@ def get_config(
         for config_path in config_paths:
             config.merge_from_file(config_path)
             if config.BASE_TASK_CONFIG_PATH != prev_task_config:
-                config.TASK_CONFIG = get_task_config(
-                    config.BASE_TASK_CONFIG_PATH
-                )
+                config.TASK_CONFIG = get_task_config(config.BASE_TASK_CONFIG_PATH)
                 prev_task_config = config.BASE_TASK_CONFIG_PATH
 
     if opts:

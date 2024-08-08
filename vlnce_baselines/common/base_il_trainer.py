@@ -50,21 +50,29 @@ from fastdtw import fastdtw
 
 from ..utils import get_camera_orientations
 from ..utils import (
-    length2mask, dir_angle_feature, dir_angle_feature_with_ele,
-    show_heatmaps, draw_pano_obs,
+    length2mask,
+    dir_angle_feature,
+    dir_angle_feature_with_ele,
+    show_heatmaps,
+    draw_pano_obs,
 )
 from thop import profile
 
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=FutureWarning)
     import tensorflow as tf  # noqa: F401
+
+
 def unwarp_model(model):
     if hasattr(model, "module"):
         return model.module
     else:
         return model
+
+
 class BaseVLNCETrainer(BaseILTrainer):
     r"""A base trainer for VLN-CE imitation learning."""
+
     supported_tasks: List[str] = ["VLN-v0"]
 
     def __init__(self, config=None):
@@ -94,9 +102,11 @@ class BaseVLNCETrainer(BaseILTrainer):
         )
         # initialize the waypoint model here
         self.waypoint_model = Waypoint_Model(
-            model_config=config.MODEL, device=self.device)
+            model_config=config.MODEL, device=self.device
+        )
         self.waypoint_model_critic = Waypoint_Model_Critic(
-            model_config=config.MODEL, device=self.device)
+            model_config=config.MODEL, device=self.device
+        )
 
         self.policy.to(self.device)
         self.waypoint_model.to(self.device)
@@ -120,7 +130,7 @@ class BaseVLNCETrainer(BaseILTrainer):
         # ]
         # rest_params = [
         #     p for n, p in named_parameters if not exclude(n, p) and p.requires_grad
-        # ]                
+        # ]
         # self.optimizer = torch.optim.AdamW(
         #     [
         #         {"params": gain_or_bias_params, "weight_decay": 0.0},
@@ -129,19 +139,42 @@ class BaseVLNCETrainer(BaseILTrainer):
         #     lr=self.config.IL.lr
         # )
 
-        self.optimizer = torch.optim.AdamW([
-                {'params': self.policy.parameters(), 'lr': self.config.IL.lr}, 
-                {'params': self.waypoint_model.parameters(), 'lr': self.config.IL.way_lr},
-                {'params': self.waypoint_model_critic.parameters(), 'lr': self.config.IL.way_lr},
-            ], lr=self.config.IL.lr, )
+        self.optimizer = torch.optim.AdamW(
+            [
+                {"params": self.policy.parameters(), "lr": self.config.IL.lr},
+                {
+                    "params": self.waypoint_model.parameters(),
+                    "lr": self.config.IL.way_lr,
+                },
+                {
+                    "params": self.waypoint_model_critic.parameters(),
+                    "lr": self.config.IL.way_lr,
+                },
+            ],
+            lr=self.config.IL.lr,
+        )
         if self.config.GPU_NUMBERS > 1:
-            print('Using', self.config.GPU_NUMBERS,'GPU!')
-            self.policy = DDP(self.policy, device_ids=[self.device],
-                output_device=self.device, find_unused_parameters=True, broadcast_buffers=False)
-            self.waypoint_model = DDP(self.waypoint_model, device_ids=[self.device],
-                output_device=self.device, find_unused_parameters=True, broadcast_buffers=False)
-            self.waypoint_model_critic = DDP(self.waypoint_model_critic, device_ids=[self.device],
-                output_device=self.device, broadcast_buffers=False)
+            print("Using", self.config.GPU_NUMBERS, "GPU!")
+            self.policy = DDP(
+                self.policy,
+                device_ids=[self.device],
+                output_device=self.device,
+                find_unused_parameters=True,
+                broadcast_buffers=False,
+            )
+            self.waypoint_model = DDP(
+                self.waypoint_model,
+                device_ids=[self.device],
+                output_device=self.device,
+                find_unused_parameters=True,
+                broadcast_buffers=False,
+            )
+            self.waypoint_model_critic = DDP(
+                self.waypoint_model_critic,
+                device_ids=[self.device],
+                output_device=self.device,
+                broadcast_buffers=False,
+            )
 
         # self.way_optimizer = torch.optim.AdamW(
         #     self.waypoint_model.parameters(), lr=self.config.IL.way_lr,
@@ -151,13 +184,23 @@ class BaseVLNCETrainer(BaseILTrainer):
             ckpt_path = config.IL.ckpt_to_load
             ckpt_dict = self.load_checkpoint(ckpt_path, map_location="cpu")
 
-            unwarp_model(self.policy).load_state_dict(ckpt_dict["state_dict"], strict=False)
+            unwarp_model(self.policy).load_state_dict(
+                ckpt_dict["state_dict"], strict=False
+            )
             if "waypoint_model_critic_state_dict" in ckpt_dict:
-                unwarp_model(self.waypoint_model).load_state_dict(ckpt_dict["waypoint_model_state_dict"], strict=True)
-                unwarp_model(self.waypoint_model_critic).load_state_dict(ckpt_dict["waypoint_model_critic_state_dict"], strict=True)
+                unwarp_model(self.waypoint_model).load_state_dict(
+                    ckpt_dict["waypoint_model_state_dict"], strict=True
+                )
+                unwarp_model(self.waypoint_model_critic).load_state_dict(
+                    ckpt_dict["waypoint_model_critic_state_dict"], strict=True
+                )
             else:
-                unwarp_model(self.waypoint_model).load_state_dict(ckpt_dict["waypoint_model_state_dict"], strict=False)
-                unwarp_model(self.waypoint_model_critic).load_state_dict(ckpt_dict["waypoint_model_state_dict"], strict=False)
+                unwarp_model(self.waypoint_model).load_state_dict(
+                    ckpt_dict["waypoint_model_state_dict"], strict=False
+                )
+                unwarp_model(self.waypoint_model_critic).load_state_dict(
+                    ckpt_dict["waypoint_model_state_dict"], strict=False
+                )
             if config.IL.is_requeue:
                 self.optimizer.load_state_dict(ckpt_dict["optim_state"])
                 # self.way_optimizer.load_state_dict(ckpt_dict["way__optim_state"])
@@ -166,9 +209,7 @@ class BaseVLNCETrainer(BaseILTrainer):
             logger.info(f"Loaded weights from checkpoint: {ckpt_path}")
 
         params = sum(param.numel() for param in self.policy.parameters())
-        params_t = sum(
-            p.numel() for p in self.policy.parameters() if p.requires_grad
-        )
+        params_t = sum(p.numel() for p in self.policy.parameters() if p.requires_grad)
         params += sum(param.numel() for param in self.waypoint_model.parameters())
         params_t += sum(
             p.numel() for p in self.waypoint_model.parameters() if p.requires_grad
@@ -243,9 +284,7 @@ class BaseVLNCETrainer(BaseILTrainer):
 
         if self.config.EVAL.USE_CKPT_CONFIG:
             config = self._setup_eval_config(
-                self.load_checkpoint(checkpoint_path, map_location="cpu")[
-                    "config"
-                ]
+                self.load_checkpoint(checkpoint_path, map_location="cpu")["config"]
             )
         else:
             config = self.config.clone()
@@ -256,9 +295,7 @@ class BaseVLNCETrainer(BaseILTrainer):
         # config.TASK_CONFIG.TASK.NDTW.SPLIT = config.EVAL.SPLIT
         # config.TASK_CONFIG.TASK.SDTW.SPLIT = config.EVAL.SPLIT
         config.TASK_CONFIG.ENVIRONMENT.ITERATOR_OPTIONS.SHUFFLE = False
-        config.TASK_CONFIG.ENVIRONMENT.ITERATOR_OPTIONS.MAX_SCENE_REPEAT_STEPS = (
-            -1
-        )
+        config.TASK_CONFIG.ENVIRONMENT.ITERATOR_OPTIONS.MAX_SCENE_REPEAT_STEPS = -1
         config.IL.ckpt_to_load = checkpoint_path
         if len(config.VIDEO_OPTION) > 0:
             config.defrost()
@@ -266,7 +303,7 @@ class BaseVLNCETrainer(BaseILTrainer):
             config.TASK_CONFIG.TASK.MEASUREMENTS.append("COLLISIONS")
         config.freeze()
         # ckpt_index = checkpoint_path.split('/')[-1].split('.')[1]
-        ckpt_index = "_".join(checkpoint_path.split('/')[-1].split('.')[:-1])
+        ckpt_index = "_".join(checkpoint_path.split("/")[-1].split(".")[:-1])
         if config.EVAL.SAVE_RESULTS:
             fname = os.path.join(
                 config.RESULTS_DIR,
@@ -277,13 +314,14 @@ class BaseVLNCETrainer(BaseILTrainer):
                 return
 
         envs = construct_envs(
-            config, get_env_class(config.ENV_NAME),
+            config,
+            get_env_class(config.ENV_NAME),
             auto_reset_done=False,
-            episodes_allowed=self.traj
+            episodes_allowed=self.traj,
         )
 
         dataset_length = sum(envs.number_of_episodes)
-        print('local rank:', self.local_rank, '|', 'dataset length:', dataset_length)
+        print("local rank:", self.local_rank, "|", "dataset length:", dataset_length)
 
         obs_transforms = get_active_obs_transforms(config)
 
@@ -304,7 +342,9 @@ class BaseVLNCETrainer(BaseILTrainer):
 
         observations = envs.reset()
         observations = extract_instruction_tokens(
-            observations, self.config.TASK_CONFIG.TASK.INSTRUCTION_SENSOR_UUID, return_mask=True
+            observations,
+            self.config.TASK_CONFIG.TASK.INSTRUCTION_SENSOR_UUID,
+            return_mask=True,
         )
         batch = batch_obs(observations, self.device)
         batch = apply_obs_transforms_batch(batch, obs_transforms)
@@ -353,12 +393,12 @@ class BaseVLNCETrainer(BaseILTrainer):
         attn_act = []
         while envs.num_envs > 0 and len(stats_episodes) < episodes_to_eval:
             current_episodes = envs.current_episodes()
-            positions = []; prev_headings = []
+            positions = []
+            prev_headings = []
             for ob_i in range(len(current_episodes)):
-                agent_state_i = envs.call_at(ob_i,
-                        "get_agent_info", {})
-                positions.append(agent_state_i['position'])
-                prev_headings.append(agent_state_i['heading'])
+                agent_state_i = envs.call_at(ob_i, "get_agent_info", {})
+                positions.append(agent_state_i["position"])
+                prev_headings.append(agent_state_i["heading"])
 
             if prev_way_dists == []:
                 prev_way_dists = [0.0] * envs.num_envs
@@ -366,15 +406,15 @@ class BaseVLNCETrainer(BaseILTrainer):
             with torch.no_grad():
                 # h_t_flag = way_states.sum(1)==0.0
                 # view model languages
-                #FLOPs = 0
-                #PARAM = 0
+                # FLOPs = 0
+                # PARAM = 0
                 all_view_lang_feats, all_view_lang_masks = self.policy(
-                    mode = "language",
-                    observations = batch,
+                    mode="language",
+                    observations=batch,
                 )
-                #flops, params = profile(self.policy, inputs=("language",batch,None,None,None,None,None,None,None,None,None,None,True))
-                #FLOPs += flops
-                #PARAM += params
+                # flops, params = profile(self.policy, inputs=("language",batch,None,None,None,None,None,None,None,None,None,None,True))
+                # FLOPs += flops
+                # PARAM += params
                 # all_way_lang_masks = (all_view_lang_masks == False)
                 # all_way_lang_feats = self.waypoint_model(
                 #     mode='language',
@@ -384,80 +424,89 @@ class BaseVLNCETrainer(BaseILTrainer):
                 # # way_states[h_t_flag] = way_states_init[h_t_flag]
                 # way_lang_states = torch.cat(
                 #     (way_states.unsqueeze(1), all_way_lang_feats[:,1:,:]), dim=1)
-                    
+
                 # encoding views
-                cand_rgb, cand_depth, cand_direction, \
-                cand_mask, candidate_lengths, \
-                batch_angles = self.policy(
-                    mode = "view",
-                    observations = batch,
-                    in_train = False,
+                (
+                    cand_rgb,
+                    cand_depth,
+                    cand_direction,
+                    cand_mask,
+                    candidate_lengths,
+                    batch_angles,
+                ) = self.policy(
+                    mode="view",
+                    observations=batch,
+                    in_train=False,
                 )
-                #flops, params = profile(self.policy, inputs=("view",batch,None,None,None,None,None,None,None,None,None,None,False))
-                #FLOPs += flops
-                #PARAM += params
+                # flops, params = profile(self.policy, inputs=("view",batch,None,None,None,None,None,None,None,None,None,None,False))
+                # FLOPs += flops
+                # PARAM += params
 
                 # view selection action logits
                 # 可视化
                 logits, view_states, attn_vis_weight, attn_act_weight = self.policy(
-                    mode = 'selection',
-                    observations = batch,
-                    instruction = all_view_lang_feats,
-                    lang_mask = all_view_lang_masks,
-                    view_states = view_states,
+                    mode="selection",
+                    observations=batch,
+                    instruction=all_view_lang_feats,
+                    lang_mask=all_view_lang_masks,
+                    view_states=view_states,
                     # way_states = way_states,
-                    prev_headings = prev_headings,
-                    cand_rgb = cand_rgb, 
-                    cand_depth = cand_depth,
-                    cand_direction = cand_direction,
-                    cand_mask = cand_mask,
-                    masks = not_done_masks,
+                    prev_headings=prev_headings,
+                    cand_rgb=cand_rgb,
+                    cand_depth=cand_depth,
+                    cand_direction=cand_direction,
+                    cand_mask=cand_mask,
+                    masks=not_done_masks,
                 )
-                #flops, params = profile(self.policy, inputs=("selection",batch,all_view_lang_feats,all_view_lang_masks,view_states,None,cand_rgb,cand_depth,cand_direction,cand_mask,prev_headings,not_done_masks,True))
-                #FLOPs += flops
-                #PARAM += params
+                # flops, params = profile(self.policy, inputs=("selection",batch,all_view_lang_feats,all_view_lang_masks,view_states,None,cand_rgb,cand_depth,cand_direction,cand_mask,prev_headings,not_done_masks,True))
+                # FLOPs += flops
+                # PARAM += params
 
-                logits = logits.masked_fill_(cand_mask, -float('inf'))
+                logits = logits.masked_fill_(cand_mask, -float("inf"))
                 actions = logits.argmax(dim=-1, keepdim=True)
 
                 # waypoint prediction
                 # way_states, \
                 angle_offsets, dist_offsets, way_log_probs = self.waypoint_model(
-                    mode = 'way_actor',
-                    instruction = all_view_lang_feats,
-                    lang_mask = all_view_lang_masks,
+                    mode="way_actor",
+                    instruction=all_view_lang_feats,
+                    lang_mask=all_view_lang_masks,
                     # view_states = view_states,
-                    way_states = view_states,
-                    prev_headings = prev_headings,
-                    prev_way_dists = prev_way_dists,
-                    batch_angles = batch_angles,
-                    actions = actions,
-                    cand_rgb = cand_rgb, 
-                    cand_depth = cand_depth,
-                    cand_direction = cand_direction,
+                    way_states=view_states,
+                    prev_headings=prev_headings,
+                    prev_way_dists=prev_way_dists,
+                    batch_angles=batch_angles,
+                    actions=actions,
+                    cand_rgb=cand_rgb,
+                    cand_depth=cand_depth,
+                    cand_direction=cand_direction,
                     # cand_mask = cand_mask,
-                    masks = not_done_masks,
+                    masks=not_done_masks,
                 )
-                #flops, params = profile(self.waypoint_model, inputs=("way_actor",None, all_view_lang_masks, all_view_lang_feats, view_states, prev_headings, prev_way_dists, batch_angles, actions, cand_rgb, cand_depth, cand_direction, not_done_masks))
-                #FLOPs += flops
-                #PARAM += params
-                #print(FLOPs, PARAM)
+                # flops, params = profile(self.waypoint_model, inputs=("way_actor",None, all_view_lang_masks, all_view_lang_feats, view_states, prev_headings, prev_way_dists, batch_angles, actions, cand_rgb, cand_depth, cand_direction, not_done_masks))
+                # FLOPs += flops
+                # PARAM += params
+                # print(FLOPs, PARAM)
 
                 # high-to-low actions in environments
                 prev_way_dists = []  # reset predicted step dists (for not done agents)
                 env_actions = []
-                for j in range(logits.size(0)): # B
+                for j in range(logits.size(0)):  # B
                     action_j = actions[j].item()
-                    if action_j == candidate_lengths[j]-1:
-                        env_actions.append({'action':
-                            {'action': 0, 'action_args':{}}})
+                    if action_j == candidate_lengths[j] - 1:
+                        env_actions.append({"action": {"action": 0, "action_args": {}}})
                     else:
-                        env_actions.append({'action':
-                            {'action': 4,  # HIGHTOLOW
-                            'action_args':{
-                                'angle': angle_offsets[j].item(), 
-                                'distance': dist_offsets[j].item(),
-                            }}})
+                        env_actions.append(
+                            {
+                                "action": {
+                                    "action": 4,  # HIGHTOLOW
+                                    "action_args": {
+                                        "angle": angle_offsets[j].item(),
+                                        "distance": dist_offsets[j].item(),
+                                    },
+                                }
+                            }
+                        )
                         prev_way_dists.append(dist_offsets[j].item())
 
             outputs = envs.step(env_actions)
@@ -465,18 +514,23 @@ class BaseVLNCETrainer(BaseILTrainer):
             attn_act.append(attn_act_weight)
             observations, _, dones, infos = [list(x) for x in zip(*outputs)]
             for j, ob in enumerate(observations):
-                if env_actions[j]['action']['action'] == 0:
+                if env_actions[j]["action"]["action"] == 0:
                     continue
                 else:
-                    envs.call_at(j, 
-                        'change_current_path',
-                        {'new_path': ob.pop('positions'),
-                        'collisions': ob.pop('collisions')}
+                    envs.call_at(
+                        j,
+                        "change_current_path",
+                        {
+                            "new_path": ob.pop("positions"),
+                            "collisions": ob.pop("collisions"),
+                        },
                     )
 
             not_done_masks = torch.tensor(
                 [[0] if done else [1] for done in dones],
-                dtype=torch.uint8, device=self.device)
+                dtype=torch.uint8,
+                device=self.device,
+            )
 
             # reset envs and observations if necessary
             for i in range(envs.num_envs):
@@ -487,54 +541,88 @@ class BaseVLNCETrainer(BaseILTrainer):
                         frame, current_episodes[i].instruction.instruction_text
                     )
                     rgb_frames[i].append(frame)
-                    # 绘制全景图       
+                    # 绘制全景图
 
-                    draw_pano_obs(observations[i], path=config.VIDEO_DIR, ep_id=ep_id, idx=infos[i]["steps_taken"])
+                    draw_pano_obs(
+                        observations[i],
+                        path=config.VIDEO_DIR,
+                        ep_id=ep_id,
+                        idx=infos[i]["steps_taken"],
+                    )
 
                 if not dones[i]:
                     continue
-                         # dones之后要做的事
+                    # dones之后要做的事
                 info = infos[i]
                 metric = {}
-                metric['steps_taken'] = info['steps_taken']
-                
-                gt_path = np.array(self.gt_data[ep_id]['locations']).astype(float)
-                if 'current_path' in envs.current_episodes()[i].info.keys():
-                    positions_ = np.array(envs.current_episodes()[i].info['current_path']).astype(float)
-                    collisions_ = np.array(envs.current_episodes()[i].info['collisions'])
+                metric["steps_taken"] = info["steps_taken"]
+
+                gt_path = np.array(self.gt_data[ep_id]["locations"]).astype(float)
+                if "current_path" in envs.current_episodes()[i].info.keys():
+                    positions_ = np.array(
+                        envs.current_episodes()[i].info["current_path"]
+                    ).astype(float)
+                    collisions_ = np.array(
+                        envs.current_episodes()[i].info["collisions"]
+                    )
                     assert collisions_.shape[0] == positions_.shape[0] - 1
                 else:
-                    positions_ = np.array(dis_to_con(np.array(info['position']['position']))).astype(float)
-                distance = np.array(info['position']['distance']).astype(float)
-                metric['distance_to_goal'] = distance[-1]
-                metric['success'] = 1. if distance[-1] <= 3. and env_actions[i]['action']['action'] == 0 else 0.
-                metric['oracle_success'] = 1. if (distance <= 3.).any() else 0.
-                metric['path_length'] = np.linalg.norm(positions_[1:] - positions_[:-1],axis=1).sum()
-                metric['collisions'] = collisions_.mean()
+                    positions_ = np.array(
+                        dis_to_con(np.array(info["position"]["position"]))
+                    ).astype(float)
+                distance = np.array(info["position"]["distance"]).astype(float)
+                metric["distance_to_goal"] = distance[-1]
+                metric["success"] = (
+                    1.0
+                    if distance[-1] <= 3.0 and env_actions[i]["action"]["action"] == 0
+                    else 0.0
+                )
+                metric["oracle_success"] = 1.0 if (distance <= 3.0).any() else 0.0
+                metric["path_length"] = np.linalg.norm(
+                    positions_[1:] - positions_[:-1], axis=1
+                ).sum()
+                metric["collisions"] = collisions_.mean()
                 # gt_length = np.linalg.norm(gt_path[1:] - gt_path[:-1],axis=1).sum()
                 gt_length = distance[0]
-                metric['spl'] = metric['success']*gt_length/max(gt_length,metric['path_length'])
+                metric["spl"] = (
+                    metric["success"]
+                    * gt_length
+                    / max(gt_length, metric["path_length"])
+                )
 
                 # act_con_path = np.array(dis_to_con(positions_)).astype(float)
                 act_con_path = positions_
                 gt_con_path = np.array(dis_to_con(gt_path)).astype(float)
-                dtw_distance = fastdtw(act_con_path, gt_con_path, dist=NDTW.euclidean_distance)[0]
-                nDTW = np.exp(-dtw_distance / (len(gt_con_path) * config.TASK_CONFIG.TASK.SUCCESS_DISTANCE))
+                dtw_distance = fastdtw(
+                    act_con_path, gt_con_path, dist=NDTW.euclidean_distance
+                )[0]
+                nDTW = np.exp(
+                    -dtw_distance
+                    / (len(gt_con_path) * config.TASK_CONFIG.TASK.SUCCESS_DISTANCE)
+                )
 
-                metric['ndtw'] = nDTW
+                metric["ndtw"] = nDTW
                 stats_episodes[current_episodes[i].episode_id] = metric
                 # 可视化 768 -> step
                 if self.config.EVAL.VISUALIZE:
                     map1 = torch.cat(attn_vis, dim=0)
                     map2 = torch.cat(attn_act, dim=0)
                     obs = envs.current_episodes()
-                    show_heatmaps(map1.T.cpu(), map2.T.cpu(), 'time_step', 'instruction', title="episode:"+ep_id, text=obs[0].instruction.instruction_text, path="logs")
+                    show_heatmaps(
+                        map1.T.cpu(),
+                        map2.T.cpu(),
+                        "time_step",
+                        "instruction",
+                        title="episode:" + ep_id,
+                        text=obs[0].instruction.instruction_text,
+                        path="logs",
+                    )
                 attn_vis = []
                 attn_act = []
 
                 observations[i] = envs.reset_at(i)[0]
                 # number += 1
-                view_states[i] *= 0.
+                view_states[i] *= 0.0
                 # way_states[i] *= 0.
 
                 if config.use_pbar:
@@ -556,9 +644,7 @@ class BaseVLNCETrainer(BaseILTrainer):
                         episode_id=current_episodes[i].episode_id,
                         checkpoint_idx=checkpoint_index,
                         metrics={
-                            "spl": stats_episodes[
-                                current_episodes[i].episode_id
-                            ]["spl"]
+                            "spl": stats_episodes[current_episodes[i].episode_id]["spl"]
                         },
                         tb_writer=writer,
                     )
@@ -566,16 +652,13 @@ class BaseVLNCETrainer(BaseILTrainer):
                     # del stats_episodes[current_episodes[i].episode_id][
                     #     "top_down_map_vlnce"
                     # ]
-                    del stats_episodes[current_episodes[i].episode_id][
-                        "collisions"
-                    ]
+                    del stats_episodes[current_episodes[i].episode_id]["collisions"]
                     rgb_frames[i] = []
-
 
             observations = extract_instruction_tokens(
                 observations,
                 self.config.TASK_CONFIG.TASK.INSTRUCTION_SENSOR_UUID,
-                return_mask=True
+                return_mask=True,
             )
             batch = batch_obs(observations, self.device)
             batch = apply_obs_transforms_batch(batch, obs_transforms)
@@ -611,7 +694,7 @@ class BaseVLNCETrainer(BaseILTrainer):
             prev_headings = prev_headings.tolist()
         cost_time = time.time() - start_time
         if config.use_pbar:
-            cost_time = min(cost_time, pbar.format_dict['elapsed'])
+            cost_time = min(cost_time, pbar.format_dict["elapsed"])
         envs.close()
         if config.use_pbar:
             pbar.close()
@@ -622,24 +705,24 @@ class BaseVLNCETrainer(BaseILTrainer):
         # print('rank', self.local_rank, 'evaluated',num_episodes, 'episodes')
         for stat_key in next(iter(stats_episodes.values())).keys():
             aggregated_stats[stat_key] = (
-                sum(v[stat_key] for v in stats_episodes.values())
-                / num_episodes
+                sum(v[stat_key] for v in stats_episodes.values()) / num_episodes
             )
         # print(self.local_rank, aggregated_stats)
         total = torch.tensor(num_episodes).cuda()
         if self.world_size > 1:
-            dist.reduce(total,dst=0)
+            dist.reduce(total, dst=0)
         total = total.item()
 
         if self.world_size > 1:
             logger.info(
-                f"rank {self.local_rank}'s {num_episodes}-episode results: {aggregated_stats}")
-            for k,v in aggregated_stats.items():
-                v = torch.tensor(v*num_episodes).cuda()
+                f"rank {self.local_rank}'s {num_episodes}-episode results: {aggregated_stats}"
+            )
+            for k, v in aggregated_stats.items():
+                v = torch.tensor(v * num_episodes).cuda()
                 # print(self.local_rank, k+':', v.item(), num_episodes, 'before reduce')
-                cat_v = gather_list_and_concat(v,self.world_size)
+                cat_v = gather_list_and_concat(v, self.world_size)
                 # print(self.local_rank, k+':', cat_v, num_episodes, 'after_reduce')
-                v = (sum(cat_v)/total).item()
+                v = (sum(cat_v) / total).item()
                 # print(self.local_rank, k+':', v, num_episodes, 'after divide total')
                 aggregated_stats[k] = v
         aggregated_stats["cost_time"] = cost_time
@@ -671,11 +754,12 @@ class BaseVLNCETrainer(BaseILTrainer):
 
     def collect_val_traj(self):
         from habitat_extensions.task import ALL_ROLES_MASK, RxRVLNCEDatasetV1
+
         trajectories = defaultdict(list)
         # if self.config.EVAL.load_traj == False:
         split = self.config.TASK_CONFIG.DATASET.SPLIT
 
-        if 'rxr' in self.config.BASE_TASK_CONFIG_PATH:
+        if "rxr" in self.config.BASE_TASK_CONFIG_PATH:
             if "{role}" in self.config.IL.RECOLLECT_TRAINER.gt_file:
                 gt_data = {}
                 for role in RxRVLNCEDatasetV1.annotation_roles:
@@ -694,45 +778,49 @@ class BaseVLNCETrainer(BaseILTrainer):
                         gt_data.update(json.load(f))
             else:
                 with gzip.open(
-                    self.config.IL.RECOLLECT_TRAINER.gt_path.format(
-                        split=split)
+                    self.config.IL.RECOLLECT_TRAINER.gt_path.format(split=split)
                 ) as f:
                     gt_data = json.load(f)
         else:
-            if os.path.exists(self.config.TASK_CONFIG.TASK.NDTW.GT_PATH.format(split=split)):
+            if os.path.exists(
+                self.config.TASK_CONFIG.TASK.NDTW.GT_PATH.format(split=split)
+            ):
                 with gzip.open(
-                    self.config.TASK_CONFIG.TASK.NDTW.GT_PATH.format(
-                        split=split)
+                    self.config.TASK_CONFIG.TASK.NDTW.GT_PATH.format(split=split)
                 ) as f:
                     gt_data = json.load(f)
             else:
-                with gzip.open(self.config.TASK_CONFIG.DATASET.DATA_PATH.format(split=split)) as f:
+                with gzip.open(
+                    self.config.TASK_CONFIG.DATASET.DATA_PATH.format(split=split)
+                ) as f:
                     data = json.load(f)
-                gt_data = {str(v["episode_id"]):"" for v in data["episodes"]}
+                gt_data = {str(v["episode_id"]): "" for v in data["episodes"]}
 
         self.gt_data = gt_data
-            # t = (
-            #     tqdm.tqdm(gt_data.items(), "GT Collection")
-            #     if self.config.use_pbar
-            #     else gt_data.items()
-            # )
+        # t = (
+        #     tqdm.tqdm(gt_data.items(), "GT Collection")
+        #     if self.config.use_pbar
+        #     else gt_data.items()
+        # )
 
-            # # allowed_id = self.collect_scene_ep()
-            # for episode_id, trajectory in t:
-            #     if (
-            #         self.config.IL.RECOLLECT_TRAINER.max_traj_len != -1
-            #         and len(trajectory["actions"])
-            #         > self.config.IL.RECOLLECT_TRAINER.max_traj_len
-            #     ) or (
-            #         self.config.IL.RECOLLECT_TRAINER.min_traj_len != -1
-            #         and len(trajectory["actions"])
-            #         < self.config.IL.RECOLLECT_TRAINER.min_traj_len
-            #     ): #or (episode_id not in allowed_id):
-            #         continue
+        # # allowed_id = self.collect_scene_ep()
+        # for episode_id, trajectory in t:
+        #     if (
+        #         self.config.IL.RECOLLECT_TRAINER.max_traj_len != -1
+        #         and len(trajectory["actions"])
+        #         > self.config.IL.RECOLLECT_TRAINER.max_traj_len
+        #     ) or (
+        #         self.config.IL.RECOLLECT_TRAINER.min_traj_len != -1
+        #         and len(trajectory["actions"])
+        #         < self.config.IL.RECOLLECT_TRAINER.min_traj_len
+        #     ): #or (episode_id not in allowed_id):
+        #         continue
 
         trajectories = gt_data
         self.trajectories = gt_data
-        trajectories = list(trajectories.keys())[self.config.local_rank::self.config.GPU_NUMBERS]
+        trajectories = list(trajectories.keys())[
+            self.config.local_rank :: self.config.GPU_NUMBERS
+        ]
         #     with gzip.open(
         #         self.config.EVAL.trajectories_file, "wt"
         #     ) as f:
@@ -779,26 +867,34 @@ class BaseVLNCETrainer(BaseILTrainer):
         # self.config.TASK_CONFIG.TASK.NDTW.SPLIT = split
         # self.config.TASK_CONFIG.TASK.SDTW.SPLIT = split
         self.config.TASK_CONFIG.DATASET.ROLES = ["guide"]
-        self.config.TASK_CONFIG.TASK.MEASUREMENTS = ['POSITION',
-                                                     'STEPS_TAKEN',
-                                                     ]
-        if 'HIGHTOLOW' in self.config.TASK_CONFIG.TASK.POSSIBLE_ACTIONS:
-            idx = self.config.TASK_CONFIG.TASK.POSSIBLE_ACTIONS.index('HIGHTOLOW')
-            self.config.TASK_CONFIG.TASK.POSSIBLE_ACTIONS[idx] = 'HIGHTOLOWEVAL'
+        self.config.TASK_CONFIG.TASK.MEASUREMENTS = [
+            "POSITION",
+            "STEPS_TAKEN",
+        ]
+        if "HIGHTOLOW" in self.config.TASK_CONFIG.TASK.POSSIBLE_ACTIONS:
+            idx = self.config.TASK_CONFIG.TASK.POSSIBLE_ACTIONS.index("HIGHTOLOW")
+            self.config.TASK_CONFIG.TASK.POSSIBLE_ACTIONS[idx] = "HIGHTOLOWEVAL"
         self.config.TASK_CONFIG.DATASET.LANGUAGES = self.config.EVAL.LANGUAGES
         self.config.TASK_CONFIG.DATASET.SPLIT = self.config.EVAL.SPLIT
         self.config.TASK_CONFIG.TASK.NDTW.SPLIT = self.config.EVAL.SPLIT
         self.config.TASK_CONFIG.TASK.SDTW.SPLIT = self.config.EVAL.SPLIT
         self.config.use_pbar = not is_slurm_batch_job()
-        if 'rxr' in self.config.BASE_TASK_CONFIG_PATH:
-            self.config.EVAL.trajectories_file = \
-                self.config.EVAL.trajectories_file[:-8] + '_w' + \
-                str(self.world_size) + '_r' + str(self.local_rank) + '.json.gz'
-        
+        if "rxr" in self.config.BASE_TASK_CONFIG_PATH:
+            self.config.EVAL.trajectories_file = (
+                self.config.EVAL.trajectories_file[:-8]
+                + "_w"
+                + str(self.world_size)
+                + "_r"
+                + str(self.local_rank)
+                + ".json.gz"
+            )
+
         # if choosing image
         resize_config = self.config.RL.POLICY.OBS_TRANSFORMS.RESIZER_PER_SENSOR.SIZES
         config = self.config.TASK_CONFIG
-        camera_orientations = get_camera_orientations(sectors=self.config.MODEL.num_cameras)
+        camera_orientations = get_camera_orientations(
+            sectors=self.config.MODEL.num_cameras
+        )
 
         # sensor_uuids = []
         for sensor_type in ["RGB", "DEPTH"]:
@@ -816,7 +912,7 @@ class BaseVLNCETrainer(BaseILTrainer):
         self.config.RL.POLICY.OBS_TRANSFORMS.RESIZER_PER_SENSOR.SIZES = resize_config
         self.config.TASK_CONFIG = config
         self.config.SENSORS = config.SIMULATOR.AGENT_0.SENSORS
-        
+
         self.config.freeze()
         # self.config.TASK_CONFIG.ENVIRONMENT.ITERATOR_OPTIONS.SHUFFLE = False
         # self.config.TASK_CONFIG.ENVIRONMENT.ITERATOR_OPTIONS.MAX_SCENE_REPEAT_STEPS = (
@@ -824,7 +920,7 @@ class BaseVLNCETrainer(BaseILTrainer):
         # )
         torch.cuda.set_device(self.device)
         if world_size > 1:
-            distr.init_process_group(backend='nccl', init_method='env://')
+            distr.init_process_group(backend="nccl", init_method="env://")
             self.device = self.config.TORCH_GPU_IDS[self.local_rank]
             torch.cuda.set_device(self.device)
             self.config.defrost()
@@ -838,9 +934,7 @@ class BaseVLNCETrainer(BaseILTrainer):
         ) as writer:
             if os.path.isfile(self.config.EVAL_CKPT_PATH_DIR):
                 # evaluate singe checkpoint
-                proposed_index = get_checkpoint_id(
-                    self.config.EVAL_CKPT_PATH_DIR
-                )
+                proposed_index = get_checkpoint_id(self.config.EVAL_CKPT_PATH_DIR)
                 if proposed_index is not None:
                     ckpt_idx = proposed_index
                 else:
@@ -870,7 +964,7 @@ class BaseVLNCETrainer(BaseILTrainer):
                         writer=writer,
                         checkpoint_index=prev_ckpt_ind,
                     )
-                    
+
     def inference(self) -> None:
         r"""Main method of trainer evaluation. Calls _eval_checkpoint() that
         is specified in Trainer class that inherits from BaseRLTrainer
@@ -898,21 +992,28 @@ class BaseVLNCETrainer(BaseILTrainer):
         # self.config.TASK_CONFIG.TASK.SDTW.SPLIT = split
         self.config.TASK_CONFIG.DATASET.ROLES = ["guide"]
         self.config.TASK_CONFIG.TASK.MEASUREMENTS = []
-        if 'HIGHTOLOW' in self.config.TASK_CONFIG.TASK.POSSIBLE_ACTIONS:
-            idx = self.config.TASK_CONFIG.TASK.POSSIBLE_ACTIONS.index('HIGHTOLOW')
-            self.config.TASK_CONFIG.TASK.POSSIBLE_ACTIONS[idx] = 'HIGHTOLOWEVAL'
+        if "HIGHTOLOW" in self.config.TASK_CONFIG.TASK.POSSIBLE_ACTIONS:
+            idx = self.config.TASK_CONFIG.TASK.POSSIBLE_ACTIONS.index("HIGHTOLOW")
+            self.config.TASK_CONFIG.TASK.POSSIBLE_ACTIONS[idx] = "HIGHTOLOWEVAL"
         self.config.TASK_CONFIG.DATASET.LANGUAGES = self.config.EVAL.LANGUAGES
         self.config.TASK_CONFIG.DATASET.SPLIT = self.config.INFERENCE.SPLIT
         self.config.use_pbar = not is_slurm_batch_job()
-        if 'rxr' in self.config.BASE_TASK_CONFIG_PATH:
-            self.config.EVAL.trajectories_file = \
-                self.config.EVAL.trajectories_file[:-8] + '_w' + \
-                str(self.world_size) + '_r' + str(self.local_rank) + '.json.gz'
-        
+        if "rxr" in self.config.BASE_TASK_CONFIG_PATH:
+            self.config.EVAL.trajectories_file = (
+                self.config.EVAL.trajectories_file[:-8]
+                + "_w"
+                + str(self.world_size)
+                + "_r"
+                + str(self.local_rank)
+                + ".json.gz"
+            )
+
         # if choosing image
         resize_config = self.config.RL.POLICY.OBS_TRANSFORMS.RESIZER_PER_SENSOR.SIZES
         task_config = self.config.TASK_CONFIG
-        camera_orientations = get_camera_orientations(sectors=self.config.MODEL.num_cameras)
+        camera_orientations = get_camera_orientations(
+            sectors=self.config.MODEL.num_cameras
+        )
 
         # sensor_uuids = []
         for sensor_type in ["RGB", "DEPTH"]:
@@ -932,23 +1033,22 @@ class BaseVLNCETrainer(BaseILTrainer):
         self.config.TASK_CONFIG = task_config
         self.config.SENSORS = task_config.SIMULATOR.AGENT_0.SENSORS
         self.config.TASK_CONFIG.ENVIRONMENT.ITERATOR_OPTIONS.SHUFFLE = False
-        self.config.TASK_CONFIG.ENVIRONMENT.ITERATOR_OPTIONS.MAX_SCENE_REPEAT_STEPS = (
-            -1
-        )
+        self.config.TASK_CONFIG.ENVIRONMENT.ITERATOR_OPTIONS.MAX_SCENE_REPEAT_STEPS = -1
         # self.config.ENV_NAME = "VLNCEInferenceEnv"
         self.config.freeze()
         torch.cuda.set_device(self.device)
         self.traj = self.collect_val_traj()
         envs = construct_envs(
-            self.config, get_env_class(self.config.ENV_NAME),
+            self.config,
+            get_env_class(self.config.ENV_NAME),
             auto_reset_done=False,
-            episodes_allowed=self.traj
+            episodes_allowed=self.traj,
         )
 
         obs_transforms = get_active_obs_transforms(self.config)
         # 取消中心裁剪
         obs_transforms = []
-        
+
         observation_space = apply_obs_transforms_obs_space(
             envs.observation_spaces[0], obs_transforms
         )
@@ -964,7 +1064,9 @@ class BaseVLNCETrainer(BaseILTrainer):
 
         observations = envs.reset()
         observations = extract_instruction_tokens(
-            observations, self.config.TASK_CONFIG.TASK.INSTRUCTION_SENSOR_UUID, return_mask=True
+            observations,
+            self.config.TASK_CONFIG.TASK.INSTRUCTION_SENSOR_UUID,
+            return_mask=True,
         )
         batch = batch_obs(observations, self.device)
         batch = apply_obs_transforms_batch(batch, obs_transforms)
@@ -1001,102 +1103,115 @@ class BaseVLNCETrainer(BaseILTrainer):
             while envs.num_envs > 0:
                 current_episodes = envs.current_episodes()
 
-                positions = []; prev_headings = []
+                positions = []
+                prev_headings = []
 
                 for ob_i in range(len(current_episodes)):
-                    agent_state_i = envs.call_at(ob_i,
-                            "get_agent_info", {})
-                    positions.append(agent_state_i['position'])
-                    prev_headings.append(agent_state_i['heading'])
+                    agent_state_i = envs.call_at(ob_i, "get_agent_info", {})
+                    positions.append(agent_state_i["position"])
+                    prev_headings.append(agent_state_i["heading"])
 
                 if prev_way_dists == []:
                     prev_way_dists = [0.0] * envs.num_envs
 
                 with torch.no_grad():
                     all_view_lang_feats, all_view_lang_masks = self.policy(
-                        mode = "language",
-                        observations = batch,
+                        mode="language",
+                        observations=batch,
                     )
                     # encoding views
-                    cand_rgb, cand_depth, cand_direction, \
-                    cand_mask, candidate_lengths, \
-                    batch_angles = self.policy(
-                        mode = "view",
-                        observations = batch,
-                        in_train = False,
+                    (
+                        cand_rgb,
+                        cand_depth,
+                        cand_direction,
+                        cand_mask,
+                        candidate_lengths,
+                        batch_angles,
+                    ) = self.policy(
+                        mode="view",
+                        observations=batch,
+                        in_train=False,
                     )
                     # view selection action logits
                     logits, view_states, attn_vis_weight, attn_act_weight = self.policy(
-                        mode = 'selection',
-                        observations = batch,
-                        instruction = all_view_lang_feats,
-                        lang_mask = all_view_lang_masks,
-                        view_states = view_states,
+                        mode="selection",
+                        observations=batch,
+                        instruction=all_view_lang_feats,
+                        lang_mask=all_view_lang_masks,
+                        view_states=view_states,
                         # way_states = way_states,
-                        prev_headings = prev_headings,
-                        cand_rgb = cand_rgb, 
-                        cand_depth = cand_depth,
-                        cand_direction = cand_direction,
-                        cand_mask = cand_mask,
-                        masks = not_done_masks,
+                        prev_headings=prev_headings,
+                        cand_rgb=cand_rgb,
+                        cand_depth=cand_depth,
+                        cand_direction=cand_direction,
+                        cand_mask=cand_mask,
+                        masks=not_done_masks,
                     )
 
-                    logits = logits.masked_fill_(cand_mask, -float('inf'))
+                    logits = logits.masked_fill_(cand_mask, -float("inf"))
                     actions = logits.argmax(dim=-1, keepdim=True)
 
                     # waypoint prediction
                     # way_states, \
                     angle_offsets, dist_offsets, way_log_probs = self.waypoint_model(
-                        mode = 'way_actor',
-                        instruction = all_view_lang_feats,
-                        lang_mask = all_view_lang_masks,
+                        mode="way_actor",
+                        instruction=all_view_lang_feats,
+                        lang_mask=all_view_lang_masks,
                         # view_states = view_states,
-                        way_states = view_states,
-                        prev_headings = prev_headings,
-                        prev_way_dists = prev_way_dists,
-                        batch_angles = batch_angles,
-                        actions = actions,
-                        cand_rgb = cand_rgb, 
-                        cand_depth = cand_depth,
-                        cand_direction = cand_direction,
+                        way_states=view_states,
+                        prev_headings=prev_headings,
+                        prev_way_dists=prev_way_dists,
+                        batch_angles=batch_angles,
+                        actions=actions,
+                        cand_rgb=cand_rgb,
+                        cand_depth=cand_depth,
+                        cand_direction=cand_direction,
                         # cand_mask = cand_mask,
-                        masks = not_done_masks,
+                        masks=not_done_masks,
                     )
 
                     # high-to-low actions in environments
-                    prev_way_dists = []  # reset predicted step dists (for not done agents)
+                    prev_way_dists = (
+                        []
+                    )  # reset predicted step dists (for not done agents)
                     env_actions = []
-                    for j in range(logits.size(0)): # B
+                    for j in range(logits.size(0)):  # B
                         action_j = actions[j].item()
-                        if action_j == candidate_lengths[j]-1:
-                            env_actions.append({'action':
-                                {'action': 0, 'action_args':{}}})
+                        if action_j == candidate_lengths[j] - 1:
+                            env_actions.append(
+                                {"action": {"action": 0, "action_args": {}}}
+                            )
                         else:
-                            env_actions.append({'action':
-                                {'action': 4,  # HIGHTOLOW
-                                'action_args':{
-                                    'angle': angle_offsets[j].item(), 
-                                    'distance': dist_offsets[j].item(),
-                                }}})
+                            env_actions.append(
+                                {
+                                    "action": {
+                                        "action": 4,  # HIGHTOLOW
+                                        "action_args": {
+                                            "angle": angle_offsets[j].item(),
+                                            "distance": dist_offsets[j].item(),
+                                        },
+                                    }
+                                }
+                            )
                             prev_way_dists.append(dist_offsets[j].item())
 
                 outputs = envs.step(env_actions)
-                observations, _, dones, infos = [
-                    list(x) for x in zip(*outputs)
-                ]
+                observations, _, dones, infos = [list(x) for x in zip(*outputs)]
                 # 记录路径（positions为高级运动到低级运动的若干离散点）到self._env.current_episode.info['current_path']中
                 for j, ob in enumerate(observations):
-                    if env_actions[j]['action']['action'] == 0:
+                    if env_actions[j]["action"]["action"] == 0:
                         continue
                     else:
-                        pos_list = ob.pop('positions')
-                        head_list = ob.pop('headings')
+                        pos_list = ob.pop("positions")
+                        head_list = ob.pop("headings")
                         low_info = {}
                         for p in range(len(pos_list)):
                             low_info["position"] = pos_list[p].tolist()
                             low_info["heading"] = head_list[p].tolist()
                             low_info["stop"] = False
-                            episode_predictions[current_episodes[i].episode_id].append(deepcopy(low_info))
+                            episode_predictions[current_episodes[i].episode_id].append(
+                                deepcopy(low_info)
+                            )
 
                 not_done_masks = torch.tensor(
                     [[0] if done else [1] for done in dones],
@@ -1111,18 +1226,20 @@ class BaseVLNCETrainer(BaseILTrainer):
                     # )
                     if not dones[i]:
                         continue
-                    
-                    episode_predictions[current_episodes[i].episode_id][-1]["stop"] = True
+
+                    episode_predictions[current_episodes[i].episode_id][-1][
+                        "stop"
+                    ] = True
 
                     observations[i] = envs.reset_at(i)[0]
-                    view_states[i] *= 0.
+                    view_states[i] *= 0.0
                     # prev_actions[i] = torch.zeros(1, dtype=torch.long)
                     pbar.update()
 
                 observations = extract_instruction_tokens(
                     observations,
                     self.config.TASK_CONFIG.TASK.INSTRUCTION_SENSOR_UUID,
-                    return_mask=True
+                    return_mask=True,
                 )
                 batch = batch_obs(observations, self.device)
                 batch = apply_obs_transforms_batch(batch, obs_transforms)
@@ -1136,13 +1253,10 @@ class BaseVLNCETrainer(BaseILTrainer):
                     if next_episodes[i].episode_id in episode_predictions:
                         envs_to_pause.append(i)
                     else:
-                        episode_predictions[
-                            next_episodes[i].episode_id
-                        ].append(
-                            envs.call_at(i, 
-                        "get_agent_info", {})
+                        episode_predictions[next_episodes[i].episode_id].append(
+                            envs.call_at(i, "get_agent_info", {})
                         )
-                prev_headings = torch.tensor(prev_headings)        
+                prev_headings = torch.tensor(prev_headings)
 
                 (
                     envs,
@@ -1178,7 +1292,7 @@ class BaseVLNCETrainer(BaseILTrainer):
         else:  # use 'rxr' format for rxr-habitat leaderboard
             predictions_out = []
 
-            for k,v in episode_predictions.items():
+            for k, v in episode_predictions.items():
 
                 # save only positions that changed
                 path = [v[0]["position"]]
@@ -1194,14 +1308,10 @@ class BaseVLNCETrainer(BaseILTrainer):
                 )
 
             predictions_out.sort(key=lambda x: x["instruction_id"])
-            with jsonlines.open(
-                config.INFERENCE.PREDICTIONS_FILE, mode="w"
-            ) as writer:
+            with jsonlines.open(config.INFERENCE.PREDICTIONS_FILE, mode="w") as writer:
                 writer.write_all(predictions_out)
 
-            logger.info(
-                f"Predictions saved to: {config.INFERENCE.PREDICTIONS_FILE}"
-            )
+            logger.info(f"Predictions saved to: {config.INFERENCE.PREDICTIONS_FILE}")
 
     # def inference(self) -> None:
     #     r"""Runs inference on a single checkpoint, creating a path predictions file."""

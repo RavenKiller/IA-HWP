@@ -34,8 +34,10 @@ class ILPolicy(Policy, metaclass=abc.ABCMeta):
         deterministic=False,
     ):
 
-        print('need to revise for CMA and VLNBERT')
-        import pdb; pdb.set_trace()
+        print("need to revise for CMA and VLNBERT")
+        import pdb
+
+        pdb.set_trace()
 
         features, rnn_hidden_states = self.net(
             observations, rnn_hidden_states, prev_actions, masks
@@ -73,8 +75,10 @@ class ILPolicy(Policy, metaclass=abc.ABCMeta):
         deterministic=False,
     ):
 
-        print('need to revise for CMA and VLNBERT')
-        import pdb; pdb.set_trace()
+        print("need to revise for CMA and VLNBERT")
+        import pdb
+
+        pdb.set_trace()
 
         feature_rgb, feature_depth, rnn_hidden_states = self.net(
             observations, rnn_hidden_states, prev_actions, masks
@@ -82,7 +86,7 @@ class ILPolicy(Policy, metaclass=abc.ABCMeta):
         distribution_rgb = self.action_distribution(feature_rgb)
         distribution_depth = self.action_distribution(feature_depth)
 
-        probs = (distribution_rgb.probs + distribution_depth.probs)/2
+        probs = (distribution_rgb.probs + distribution_depth.probs) / 2
         # if distribution.logit
         if deterministic:
             action = probs.argmax(dim=-1, keepdim=True)

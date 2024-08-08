@@ -68,9 +68,9 @@ def colorize_topdown_map(
         # Only desaturate things that are valid points as only valid points get revealed
         desat_mask = top_down_map != MAP_INVALID_POINT
 
-        _map[desat_mask] = (
-            _map * fog_of_war_desat_values[fog_of_war_mask]
-        ).astype(np.uint8)[desat_mask]
+        _map[desat_mask] = (_map * fog_of_war_desat_values[fog_of_war_mask]).astype(
+            np.uint8
+        )[desat_mask]
 
     return _map
 
@@ -183,9 +183,7 @@ def draw_reference_path(
         pt_from = pt_to
 
     for pt in shortest_path_points:
-        drawpoint(
-            img, (pt[1], pt[0]), MAP_SHORTEST_PATH_WAYPOINT, meters_per_px
-        )
+        drawpoint(img, (pt[1], pt[0]), MAP_SHORTEST_PATH_WAYPOINT, meters_per_px)
 
 
 def draw_straight_shortest_path_points(
@@ -282,18 +280,14 @@ def draw_mp3d_nodes(
     graph: nx.Graph,
     meters_per_px: float,
 ):
-    n = get_nearest_node(
-        graph, (episode.start_position[0], episode.start_position[2])
-    )
+    n = get_nearest_node(graph, (episode.start_position[0], episode.start_position[2]))
     starting_height = graph.nodes[n]["position"][1]
     for node in graph:
         pos = graph.nodes[node]["position"]
 
         # no obvious way to differentiate between floors. Use this for now.
         if abs(pos[1] - starting_height) < 1.0:
-            r_x, r_y = habitat_maps.to_grid(
-                pos[2], pos[0], img.shape[0:2], sim
-            )
+            r_x, r_y = habitat_maps.to_grid(pos[2], pos[0], img.shape[0:2], sim)
 
         # only paint if over a valid point
         try:
