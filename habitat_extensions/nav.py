@@ -81,6 +81,7 @@ class MoveHighToLowActionEval(SimulatorTaskAction):
         init_state = self._sim.get_agent_state()
 
         positions = []
+        headings = []
         collisions = []
         # left_action = HabitatSimActions.TURN_LEFT
         forward_action = HabitatSimActions.MOVE_FORWARD
@@ -107,7 +108,10 @@ class MoveHighToLowActionEval(SimulatorTaskAction):
                 output = self._sim.step(forward_action)
             else:
                 self._sim.step_without_obs(forward_action)
-            positions.append(self._sim.get_agent_state().position)
+            current_state = self._sim.get_agent_state()
+            positions.append(current_state.position)
+            theta = np.arctan2(current_state.rotation.imag[1], current_state.rotation.real) + angle / 2
+            headings.append(theta*2)
             collisions.append(self._sim.previous_step_collided)
 
         # self._sim.get_agent(0).agent_config.action_space[
@@ -115,6 +119,7 @@ class MoveHighToLowActionEval(SimulatorTaskAction):
         # self._sim.get_agent(0).agent_config.action_space[
         #     forward_action].actuation.amount = init_forward
         output['positions'] = positions
+        output['headings'] = headings
         output['collisions'] = collisions
 
         return output

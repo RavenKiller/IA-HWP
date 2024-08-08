@@ -3,11 +3,14 @@ import torch
 import torch.distributed as dist
 import numpy as np
 import copy
+import spacy
+nlp = spacy.load("en_core_web_sm")
 
 def extract_instruction_tokens(
     observations: List[Dict],
     instruction_sensor_uuid: str,
     tokens_uuid: str = "tokens",
+    return_mask: bool = False
 ) -> Dict[str, Any]:
     r"""Extracts instruction tokens from an instruction sensor if the tokens
     exist and are in a dict structure.
@@ -17,11 +20,31 @@ def extract_instruction_tokens(
             isinstance(observations[i][instruction_sensor_uuid], dict)
             and tokens_uuid in observations[i][instruction_sensor_uuid]
         ):
-            observations[i][instruction_sensor_uuid] = np.array(observations[i][
+            tokens = np.array(observations[i][
                 instruction_sensor_uuid
             ]["tokens"])
+            if return_mask: # True is to mask
+                doc = nlp(observations[i][instruction_sensor_uuid]["text"])
+                pad_mask = (tokens == 0)
+                vis_mask = np.ones(tokens.shape, dtype=bool)
+                for nouns in doc.noun_chunks:
+                    vis_mask[nouns.start:nouns.end] = False
+                for j, word in enumerate(doc):
+                    if word.tag_.startswith("NN"):
+                        vis_mask[j] = False
+                act_mask = np.logical_not(vis_mask)
+                act_mask = np.logical_or(act_mask, pad_mask)
+                # avoid error, if no elements, allow attend all
+                if np.logical_not(vis_mask).sum() == 0:
+                    vis_mask[:len(doc)] = False
+                if np.logical_not(act_mask).sum() == 0:
+                    act_mask[:len(doc)] = False
+                observations[i]["vis_mask"] = vis_mask
+                observations[i]["act_mask"] = act_mask
+            observations[i][instruction_sensor_uuid] = tokens
         else:
             break
+
     return observations
 
 def gather_list_and_concat(list_of_nums,world_size):

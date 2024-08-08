@@ -17,7 +17,13 @@ from vlnce_baselines.config.default import get_config
 #     evaluate_agent,
 #     nonlearning_inference,
 # )
+import torch.distributed as dist
 
+# Avoid too much logs
+os.environ["MAGNUM_LOG"] = "quiet"
+os.environ["GLOG_minloglevel"] = "2"
+os.environ["HABITAT_SIM_LOG"] = "quiet"
+torch.autograd.set_detect_anomaly(True)
 
 def main():
     parser = argparse.ArgumentParser()
@@ -63,7 +69,10 @@ def run_exp(exp_name: str, exp_config: str,
     Returns:
         None.
     """
+    dist_train = True
     config = get_config(exp_config, opts)
+    if dist_train:
+        dist.init_process_group(backend='nccl')
     config.defrost()
 
     config.TENSORBOARD_DIR += exp_name
@@ -73,7 +82,10 @@ def run_exp(exp_name: str, exp_config: str,
     config.RESULTS_DIR += exp_name
     config.LOG_FILE = exp_name + '_' + config.LOG_FILE
 
-    config.local_rank = local_rank
+    config.local_rank = dist.get_rank()
+    if dist_train:
+        config.SIMULATOR_GPU_IDS = [dist.get_rank()]
+        config.GPU_NUMBERS = dist.get_world_size()
     config.freeze()
     # logger.info(f"config: {config}")  # print out all configs
     # logger.add_filehandler('logs/running_log/'+config.LOG_FILE)

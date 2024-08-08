@@ -26,6 +26,7 @@ from vlnce_baselines.models.policy import ILPolicy
 from vlnce_baselines.models.utils import (
     length2mask, angle_feature, dir_angle_feature)
 import math
+import torch.distributed as dist
 
 
 @baseline_registry.register_policy
@@ -58,6 +59,8 @@ class PolicyViewSelectionIAW(ILPolicy):
             action_space=action_space,
             model_config=config.MODEL,
         )
+    def forward(self, *args, **kwargs):
+        return self.net(*args, **kwargs)
 
 
 class IAWNet(Net):
@@ -72,11 +75,14 @@ class IAWNet(Net):
         model_config.freeze()
 
         device = (
-            torch.device("cuda", model_config.TORCH_GPU_ID)
+            torch.device("cuda", dist.get_rank())
             if torch.cuda.is_available()
             else torch.device("cpu")
         )
         self.device = device
+
+        # !!! add dropout
+        self.main_dropout = nn.Dropout(0.0)
 
         # Init the instruction encoder
         self.instruction_encoder = InstructionEncoder(
@@ -230,7 +236,7 @@ class IAWNet(Net):
         """
         if mode == 'language':
             ctx, all_lang_masks = self.instruction_encoder(observations)
-            return ctx, all_lang_masks
+            return self.main_dropout(ctx), all_lang_masks
 
         elif mode == 'view':
             batch_size = observations['instruction'].size(0)
@@ -289,7 +295,7 @@ class IAWNet(Net):
 
             cand_direction = self.angle_features.repeat(batch_size, 1, 1)
 
-            return cand_rgb, cand_depth, cand_direction, cand_mask, candidate_lengths, self.batch_angles
+            return self.main_dropout(cand_rgb), self.main_dropout(cand_depth), cand_direction, cand_mask, candidate_lengths, self.batch_angles
 
         elif mode == 'selection':
             # pool and merge visual features (no spatial encoding)
@@ -320,19 +326,19 @@ class IAWNet(Net):
 
             # language attention using state
             text_state, text_vis_weight = self.state_text_attn(
-                state, instruction, lang_mask)
+                state, instruction, lang_mask, output_prob=True)
 
             # visual attention using attended language
             vis_text_feats, vis_weight = self.text_vis_attn(
-                text_state, vis_in, cand_mask)
+                text_state, vis_in, cand_mask, output_prob=True)
 
             # view selection probability
-            x = torch.cat((state, vis_text_feats, text_state), dim=1)
+            x = torch.cat((state, self.main_dropout(vis_text_feats), self.main_dropout(text_state)), dim=1)
             _, logits = self.state_vis_logits(
                 x, vis_in, cand_mask, output_prob=False)
 
-            return logits, view_states_out
-            # return logits, view_states_out, text_vis_weight, vis_weight
+            # return logits, view_states_out
+            return logits, view_states_out, text_vis_weight, vis_weight
 
         # elif mode == 'critic':
         #     return self.critic(post_states)
@@ -351,6 +357,40 @@ class SoftDotAttention(nn.Module):
             self.linear_out = nn.Linear(q_dim + hidden_dim, hidden_dim, bias=False)
             self.tanh = nn.Tanh()
 
+    # def forward(self, q, kv, mask=None, output_prob=True):
+    #     '''Propagate h through the network.
+    #     q: (query) batch x dim
+    #     kv: (keys and values) batch x seq_len x dim
+    #     mask: batch x seq_len indices to be masked
+    #     '''
+
+    #     # try:
+    #     x_q = self.linear_q(q).unsqueeze(2)  # batch x dim x 1
+    #     x_kv = self.linear_kv(kv)
+    #     # except:
+    #     #     import pdb; pdb.set_trace()
+
+    #     # Get attention
+    #     attn = torch.bmm(F.normalize(x_kv, dim=2), F.normalize(x_q, dim=1)).squeeze(2)  # batch x seq_len
+
+    #     if mask is not None:
+    #         # -Inf masking prior to the softmax
+    #         attn.masked_fill_(mask, -float('inf'))
+            
+    #     # TODO: fix the attention bug
+    #     attn_prob = self.sm(attn)    # There will be a bug here, but it's actually a problem in torch source code.
+    #     attn_prob = attn_prob.view(attn.size(0), 1, attn.size(1))  # batch x 1 x seq_len
+
+    #     weighted_x_kv = torch.bmm(attn_prob, x_kv).squeeze(1)  # batch x dim
+    #     if output_prob:
+    #         attn = attn_prob
+    #     if self.output_tilde:
+    #         h_tilde = torch.cat((weighted_x_kv, q), 1)
+    #         h_tilde = self.tanh(self.linear_out(h_tilde))
+    #         return h_tilde, attn
+    #     else:
+    #         return weighted_x_kv, attn
+
     def forward(self, q, kv, mask=None, output_prob=True):
         '''Propagate h through the network.
         q: (query) batch x dim
@@ -366,17 +406,16 @@ class SoftDotAttention(nn.Module):
 
         # Get attention
         attn = torch.bmm(x_kv, x_q).squeeze(2)  # batch x seq_len
-        logit = attn
 
         if mask is not None:
             # -Inf masking prior to the softmax
             attn.masked_fill_(mask, -float('inf'))
-        attn = self.sm(attn)    # There will be a bug here, but it's actually a problem in torch source code.
-        attn3 = attn.view(attn.size(0), 1, attn.size(1))  # batch x 1 x seq_len
+        attn_prob = self.sm(attn)    # There will be a bug here, but it's actually a problem in torch source code.
+        attn_prob = attn_prob.view(attn.size(0), 1, attn.size(1))  # batch x 1 x seq_len
 
-        weighted_x_kv = torch.bmm(attn3, x_kv).squeeze(1)  # batch x dim
-        if not output_prob:
-            attn = logit
+        weighted_x_kv = torch.bmm(attn_prob, x_kv).squeeze(1)  # batch x dim
+        if output_prob:
+            attn = attn_prob.squeeze(1)
         if self.output_tilde:
             h_tilde = torch.cat((weighted_x_kv, q), 1)
             h_tilde = self.tanh(self.linear_out(h_tilde))

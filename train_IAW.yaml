@@ -8,7 +8,7 @@ NUM_ENVIRONMENTS: 1
 TENSORBOARD_DIR: logs/tensorboard_dirs/
 CHECKPOINT_FOLDER: logs/checkpoints/
 EVAL_CKPT_PATH_DIR: logs/checkpoints/
-RESULTS_DIR: logs/eval_results_v2/
+RESULTS_DIR: logs/eval_results/
 SIMULATOR:
   HABITAT_SIM_V0:
     ALLOW_SLIDING: False
@@ -19,18 +19,18 @@ EVAL:
   EPISODE_COUNT: -1
 
 IL:
-  epochs: 42
+  epochs: 10
   batch_size: 16
-  lr: 1e-4
+  lr: 1e-5
   way_lr: 1e-5
   schedule_ratio: 0.75
-  decay_time: 10
-  max_traj_len: 20
-  load_from_ckpt: False
-  ckpt_to_load: logs/checkpoints/iaw-0.1/ckpt.8.pth
+  decay_time: 1
+  max_traj_len: 30
+  load_from_ckpt: True
+  ckpt_to_load: logs/checkpoints/iaw_train/ckpt.9.pth
 
 MODEL:
-  policy_name: PolicyViewSelectionIAW
+  policy_name: PolicyViewSelectionIAW # or PolicyViewSelectionNVEM
   spatial_output: False
   num_cameras: 12
   RGB_ENCODER:

@@ -6,6 +6,15 @@ import copy
 from habitat_baselines.utils.common import center_crop
 import cv2
 
+import matplotlib
+matplotlib.use("AGG")
+from matplotlib import pyplot as plt
+from matplotlib import cm
+from matplotlib import axes
+import spacy
+nlp = spacy.load("en_core_web_sm")
+
+
 DEPTH_LIST=['depth', 'depth_30.0', 'depth_60.0',
                 'depth_90.0', 'depth_120.0', 'depth_150.0',
                 'depth_180.0', 'depth_210.0', 'depth_240.0',
@@ -15,12 +24,6 @@ class ARGS():
     def __init__(self):
         self.local_rank = 0
 
-def reduce_loss(tensor, rank, world_size):
-    with torch.no_grad():
-        dist.reduce(tensor, dst=0)
-        if rank == 0:
-            # print(tensor)
-            tensor /= world_size
 
 def gather_list_and_concat(list_of_nums,world_size):
     if not torch.is_tensor(list_of_nums):
@@ -219,17 +222,21 @@ def dir_angle_feature_with_ele(angle_list, device=None):
             ] * (128 // 4))
 
     return heading_enc
-
-from matplotlib import pyplot as plt
-from matplotlib import cm
-from matplotlib import axes
 # show heatmap
-def show_heatmaps(map1, map2, xlabel, ylabel, title=None, text=None, path=None, figsize=(2.5,2.5), cmap='Reds'):
+def show_heatmaps(map1, map2, xlabel, ylabel, title=None, text="", path=None, figsize=(2.5,2.5), cmap='Reds'):
+    np.save("map1.npy", map1.cpu().numpy())
+    np.save("map2.npy", map2.cpu().numpy())
+    doc = nlp(text)
+    labels = [v.text for v in doc]
     fig = plt.figure()
     ax = fig.add_subplot(121)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.set_title("vision attn")
+    ax.set_xticks([])
+    ax.set_xticks([], minor=True)
+    ax.set_yticks(list(range(len(labels))))
+    ax.set_yticklabels(labels)
     pcm = ax.imshow(map1.detach().numpy(), cmap=cmap)
 
     ax2 = fig.add_subplot(122)
@@ -252,7 +259,6 @@ def draw_pano_obs(observation, path=None, ep_id=None, idx=None):
     ax2.imshow(depth)
     fig.savefig(path + '/pano/' + 'episode-' + ep_id + '-step-' + str(int(idx)) + '.png')
     plt.close()
-
 def get_pano_obs(observation, observation_size=(1024,256)):
     """
     根据viewpoint位置画出全景图

@@ -15,6 +15,8 @@ class Waypoint_Model(nn.Module):
         super(Waypoint_Model, self).__init__()
         self.model_config = model_config
         self.device = device
+        # !!! add dropout
+        self.main_dropout = nn.Dropout(0.0)
 
         self.space_pool = nn.Sequential(
             nn.AdaptiveAvgPool2d((4,4)),
@@ -70,13 +72,13 @@ class Waypoint_Model(nn.Module):
         )
 
         # critic for A2C
-        self.waypoint_critic = nn.Sequential(
-            nn.Linear(model_config.STATE_ENCODER.hidden_size, 
-                model_config.STATE_ENCODER.hidden_size//4),
-            nn.ReLU(),
-            nn.Dropout(0.5),
-            nn.Linear(model_config.STATE_ENCODER.hidden_size//4, 1),
-        )
+        # self.waypoint_critic = nn.Sequential(
+        #     nn.Linear(model_config.STATE_ENCODER.hidden_size, 
+        #         model_config.STATE_ENCODER.hidden_size//4),
+        #     nn.ReLU(),
+        #     nn.Dropout(0.5),
+        #     nn.Linear(model_config.STATE_ENCODER.hidden_size//4, 1),
+        # )
 
     def forward(self, mode=None,
         lang_idx_tokens=None, 
@@ -135,11 +137,11 @@ class Waypoint_Model(nn.Module):
 
             # language attention using waypoint state
             text_state, _ = self.state_text_attn(
-                way_states.squeeze(1), instruction, lang_mask)
+                way_states.squeeze(1), self.main_dropout(instruction), lang_mask)
 
             # current-text-state-visual spatial attention
             vis_tilde, _ = self.text_state_spatial_attn(
-                text_state, vis_in)
+                text_state, self.main_dropout(vis_in))
 
             # predict waypoint angle and distance
             prob_x = self.way_feats_linear(
@@ -160,9 +162,43 @@ class Waypoint_Model(nn.Module):
             return self.waypoint_critic(way_states)
 
         else:
-            ModeError
+            raise NotImplementedError
 
 
+class Waypoint_Model_Critic(nn.Module):
+    def __init__(self, model_config=None, device=None):
+        super(Waypoint_Model_Critic, self).__init__()
+        self.model_config = model_config
+        self.device = device
+
+        # critic for A2C
+        self.waypoint_critic = nn.Sequential(
+            nn.Linear(model_config.STATE_ENCODER.hidden_size, 
+                model_config.STATE_ENCODER.hidden_size//4),
+            nn.ReLU(),
+            nn.Dropout(0.5),
+            nn.Linear(model_config.STATE_ENCODER.hidden_size//4, 1),
+        )
+
+    def forward(self, mode=None,
+        lang_idx_tokens=None, 
+        lang_mask=None,
+        instruction=None,
+        # view_states=None,
+        way_states=None,
+        prev_headings=None, prev_way_dists=None,
+        batch_angles=None,
+        actions=None,
+        cand_rgb=None, cand_depth=None, 
+        cand_direction=None, 
+        masks=None, 
+        ):
+
+        if mode == 'way_critic':
+            return self.waypoint_critic(way_states)
+
+        else:
+            raise NotImplementedError
 class BertLayerNorm(nn.Module):
     def __init__(self, hidden_size, eps=1e-12):
         """Construct a layernorm module in the TF style (epsilon inside the square root).

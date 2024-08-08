@@ -41,6 +41,7 @@ from vlnce_baselines.models.utils import (
 
 from vlnce_baselines.models.policy import ILPolicy
 import math
+import torch.distributed as dist
           
 @baseline_registry.register_policy
 class PolicyViewSelectionNVEM(ILPolicy):
@@ -79,6 +80,8 @@ class PolicyViewSelectionNVEM(ILPolicy):
         state value function is trainable!
         """
         return self.net.critic(h_t)
+    def forward(self, *args, **kwargs):
+        return self.net(*args, **kwargs)
         
 class NvemNet(Net):
     """
@@ -95,7 +98,7 @@ class NvemNet(Net):
         model_config.freeze()
 
         device = (
-            torch.device("cuda", model_config.TORCH_GPU_ID)
+            torch.device("cuda", dist.get_rank())
             if torch.cuda.is_available()
             else torch.device("cpu")
         )
@@ -367,6 +370,8 @@ class NvemNet(Net):
             return cand_rgb, cand_depth, cand_direction, cand_mask, candidate_lengths, self.batch_angles
 
         elif mode == 'selection':
+            vis_mask = observations["vis_mask"]
+            act_mask = observations["act_mask"]
             # pool and merge visual features (no spatial encoding)
             rgb_in = self.rgb_linear(self.space_pool(cand_rgb))
             depth_in = self.depth_linear(self.space_pool(cand_depth))
@@ -395,10 +400,11 @@ class NvemNet(Net):
             )
 
             # language attention using state
+            L = lang_mask.shape[1]
             text_state, text_vis_weight = self.state_text_attn(
-                state, instruction, lang_mask)
+                state, instruction, torch.logical_or(vis_mask[:, :L], lang_mask))
             action_state, text_act_weight = self.state_action_attn(
-                state, instruction, lang_mask)
+                state, instruction, torch.logical_or(act_mask[:, :L], lang_mask))
             # text_state, text_u, _ = self.state_text_attn(
             #     state, instruction, lang_mask)
             # action_state, action_u, _ = self.state_action_attn(
@@ -436,9 +442,9 @@ class NvemNet(Net):
             logits = torch.cat([logits_vis.unsqueeze(2), logits_act.unsqueeze(2)], dim=-1)
             logits = torch.matmul(logits, fusion_weight.unsqueeze(2)).squeeze(2)
 
-            return logits, view_states_out
+            # return logits, view_states_out
             # 为了可视化权重
-            # return logits, view_states_out, text_vis_weight, text_act_weight
+            return logits, view_states_out, text_vis_weight, text_act_weight
 
 
 class SoftDotAttention(nn.Module):
@@ -453,6 +459,7 @@ class SoftDotAttention(nn.Module):
         if output_tilde:
             self.linear_out = nn.Linear(q_dim + hidden_dim, hidden_dim, bias=False)
             self.tanh = nn.Tanh()
+
 
     def forward(self, q, kv, mask=None, output_prob=True):
         '''Propagate h through the network.
@@ -469,20 +476,19 @@ class SoftDotAttention(nn.Module):
 
         # Get attention
         attn = torch.bmm(x_kv, x_q).squeeze(2)  # batch x seq_len
-        logit = attn
 
         if mask is not None:
             # -Inf masking prior to the softmax
             attn.masked_fill_(mask, -float('inf'))
-        attn = self.sm(attn)    # There will be a bug here, but it's actually a problem in torch source code.
-        attn3 = attn.view(attn.size(0), 1, attn.size(1))  # batch x 1 x seq_len
+        attn_prob = self.sm(attn)    # There will be a bug here, but it's actually a problem in torch source code.
+        attn_prob = attn_prob.view(attn.size(0), 1, attn.size(1))  # batch x 1 x seq_len
 
-        weighted_x_kv = torch.bmm(attn3, x_kv).squeeze(1)  # batch x dim
-        if not output_prob:
-            attn = logit
+        weighted_x_kv = torch.bmm(attn_prob, x_kv).squeeze(1)  # batch x dim
+        if output_prob:
+            attn = attn_prob.squeeze(1)
         if self.output_tilde:
             h_tilde = torch.cat((weighted_x_kv, q), 1)
             h_tilde = self.tanh(self.linear_out(h_tilde))
-            return h_tilde, weighted_x_kv, attn
+            return h_tilde, attn
         else:
             return weighted_x_kv, attn

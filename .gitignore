@@ -24,7 +24,13 @@ obstacle/*
 
 waypoint_prediction
 
+logs
 vlnce_baselines/waypoint_pred
 events.out.*
 logs/eval_results_v2
 data
+
+*.out
+
+.ipynb_checkpoints
+.virtual_documents

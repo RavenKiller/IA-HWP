@@ -32,9 +32,11 @@ _C.EVAL.EPISODE_COUNT = -1
 _C.EVAL.LANGUAGES = ["en-US", "en-IN"]
 _C.EVAL.SAMPLE = False
 _C.EVAL.SAVE_RESULTS = True
+_C.EVAL.ALLOW_OVERWRITE = False
 _C.EVAL.EVAL_NONLEARNING = False
 _C.EVAL.NONLEARNING = CN()
 _C.EVAL.NONLEARNING.AGENT = "RandomAgent"
+_C.EVAL.VISUALIZE = False
 
 # -----------------------------------------------------------------------------
 # INFERENCE CONFIG

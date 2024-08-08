@@ -43,6 +43,7 @@ from vlnce_baselines.common.env_utils import (
     is_slurm_batch_job,
 )
 from vlnce_baselines.common.utils import *
+from vlnce_baselines.models.waypoint_model import Waypoint_Model, Waypoint_Model_Critic
 
 from habitat_extensions.measures import NDTW
 from fastdtw import fastdtw
@@ -52,11 +53,16 @@ from ..utils import (
     length2mask, dir_angle_feature, dir_angle_feature_with_ele,
     show_heatmaps, draw_pano_obs,
 )
+from thop import profile
 
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=FutureWarning)
     import tensorflow as tf  # noqa: F401
-
+def unwarp_model(model):
+    if hasattr(model, "module"):
+        return model.module
+    else:
+        return model
 class BaseVLNCETrainer(BaseILTrainer):
     r"""A base trainer for VLN-CE imitation learning."""
     supported_tasks: List[str] = ["VLN-v0"]
@@ -86,27 +92,57 @@ class BaseVLNCETrainer(BaseILTrainer):
             observation_space=observation_space,
             action_space=action_space,
         )
-
-        ''' initialize the waypoint model here '''
-        from vlnce_baselines.models.waypoint_model import Waypoint_Model
+        # initialize the waypoint model here
         self.waypoint_model = Waypoint_Model(
+            model_config=config.MODEL, device=self.device)
+        self.waypoint_model_critic = Waypoint_Model_Critic(
             model_config=config.MODEL, device=self.device)
 
         self.policy.to(self.device)
         self.waypoint_model.to(self.device)
+        self.waypoint_model_critic.to(self.device)
         self.num_recurrent_layers = self.policy.net.num_recurrent_layers
 
-        if self.config.GPU_NUMBERS > 1:
-            print('Using', self.config.GPU_NUMBERS,'GPU!')
-            self.policy.net = DDP(self.policy.net.to(self.device), device_ids=[self.device],
-                output_device=self.device, find_unused_parameters=True, broadcast_buffers=False)
-            self.waypoint_model = DDP(self.waypoint_model.to(self.device), device_ids=[self.device],
-                output_device=self.device, find_unused_parameters=True, broadcast_buffers=False)
+        # def exclude(n, p):
+        #     return (
+        #         p.ndim < 2
+        #         or "bn" in n
+        #         or "ln" in n
+        #         or "layernorm" in n
+        #         or "bias" in n
+        #         or "logit_scale" in n
+        #         or "scale" in n
+        #     )
+
+        # named_parameters = list(self.policy.named_parameters()) + list(self.waypoint_model.named_parameters()) + list(self.waypoint_model_critic.named_parameters())
+        # gain_or_bias_params = [
+        #     p for n, p in named_parameters if exclude(n, p) and p.requires_grad
+        # ]
+        # rest_params = [
+        #     p for n, p in named_parameters if not exclude(n, p) and p.requires_grad
+        # ]                
+        # self.optimizer = torch.optim.AdamW(
+        #     [
+        #         {"params": gain_or_bias_params, "weight_decay": 0.0},
+        #         {"params": rest_params, "weight_decay": 0.05},
+        #     ],
+        #     lr=self.config.IL.lr
+        # )
 
         self.optimizer = torch.optim.AdamW([
                 {'params': self.policy.parameters(), 'lr': self.config.IL.lr}, 
                 {'params': self.waypoint_model.parameters(), 'lr': self.config.IL.way_lr},
-            ], lr=1e-5, )
+                {'params': self.waypoint_model_critic.parameters(), 'lr': self.config.IL.way_lr},
+            ], lr=self.config.IL.lr, )
+        if self.config.GPU_NUMBERS > 1:
+            print('Using', self.config.GPU_NUMBERS,'GPU!')
+            self.policy = DDP(self.policy, device_ids=[self.device],
+                output_device=self.device, find_unused_parameters=True, broadcast_buffers=False)
+            self.waypoint_model = DDP(self.waypoint_model, device_ids=[self.device],
+                output_device=self.device, find_unused_parameters=True, broadcast_buffers=False)
+            self.waypoint_model_critic = DDP(self.waypoint_model_critic, device_ids=[self.device],
+                output_device=self.device, broadcast_buffers=False)
+
         # self.way_optimizer = torch.optim.AdamW(
         #     self.waypoint_model.parameters(), lr=self.config.IL.way_lr,
         # )
@@ -115,18 +151,13 @@ class BaseVLNCETrainer(BaseILTrainer):
             ckpt_path = config.IL.ckpt_to_load
             ckpt_dict = self.load_checkpoint(ckpt_path, map_location="cpu")
 
-            if 'module' in list(ckpt_dict['state_dict'].keys())[0] and self.config.GPU_NUMBERS == 1:
-                self.policy.net = torch.nn.DataParallel(self.policy.net.to(self.device),
-                    device_ids=[self.device], output_device=self.device)
-                self.policy.load_state_dict(ckpt_dict["state_dict"])
-                self.policy.net = self.policy.net.module
-                self.waypoint_model = torch.nn.DataParallel(self.waypoint_model.to(self.device),
-                    device_ids=[self.device], output_device=self.device)
-                self.waypoint_model.load_state_dict(ckpt_dict["waypoint_model_state_dict"])
-                self.waypoint_model = self.waypoint_model.module
+            unwarp_model(self.policy).load_state_dict(ckpt_dict["state_dict"], strict=False)
+            if "waypoint_model_critic_state_dict" in ckpt_dict:
+                unwarp_model(self.waypoint_model).load_state_dict(ckpt_dict["waypoint_model_state_dict"], strict=True)
+                unwarp_model(self.waypoint_model_critic).load_state_dict(ckpt_dict["waypoint_model_critic_state_dict"], strict=True)
             else:
-                self.policy.load_state_dict(ckpt_dict["state_dict"])
-                self.waypoint_model.load_state_dict(ckpt_dict["waypoint_model_state_dict"])
+                unwarp_model(self.waypoint_model).load_state_dict(ckpt_dict["waypoint_model_state_dict"], strict=False)
+                unwarp_model(self.waypoint_model_critic).load_state_dict(ckpt_dict["waypoint_model_state_dict"], strict=False)
             if config.IL.is_requeue:
                 self.optimizer.load_state_dict(ckpt_dict["optim_state"])
                 # self.way_optimizer.load_state_dict(ckpt_dict["way__optim_state"])
@@ -137,6 +168,10 @@ class BaseVLNCETrainer(BaseILTrainer):
         params = sum(param.numel() for param in self.policy.parameters())
         params_t = sum(
             p.numel() for p in self.policy.parameters() if p.requires_grad
+        )
+        params += sum(param.numel() for param in self.waypoint_model.parameters())
+        params_t += sum(
+            p.numel() for p in self.waypoint_model.parameters() if p.requires_grad
         )
         logger.info(f"Agent parameters: {params}. Trainable: {params_t}")
         logger.info("Finished setting up policy.")
@@ -237,7 +272,7 @@ class BaseVLNCETrainer(BaseILTrainer):
                 config.RESULTS_DIR,
                 f"stats_ckpt_{ckpt_index}_{config.TASK_CONFIG.DATASET.SPLIT}.json",
             )
-            if os.path.exists(fname):
+            if (not config.EVAL.ALLOW_OVERWRITE) and os.path.exists(fname):
                 print("skipping -- evaluation exists.", fname)
                 return
 
@@ -269,7 +304,7 @@ class BaseVLNCETrainer(BaseILTrainer):
 
         observations = envs.reset()
         observations = extract_instruction_tokens(
-            observations, self.config.TASK_CONFIG.TASK.INSTRUCTION_SENSOR_UUID
+            observations, self.config.TASK_CONFIG.TASK.INSTRUCTION_SENSOR_UUID, return_mask=True
         )
         batch = batch_obs(observations, self.device)
         batch = apply_obs_transforms_batch(batch, obs_transforms)
@@ -331,10 +366,15 @@ class BaseVLNCETrainer(BaseILTrainer):
             with torch.no_grad():
                 # h_t_flag = way_states.sum(1)==0.0
                 # view model languages
-                all_view_lang_feats, all_view_lang_masks = self.policy.net(
+                #FLOPs = 0
+                #PARAM = 0
+                all_view_lang_feats, all_view_lang_masks = self.policy(
                     mode = "language",
                     observations = batch,
                 )
+                #flops, params = profile(self.policy, inputs=("language",batch,None,None,None,None,None,None,None,None,None,None,True))
+                #FLOPs += flops
+                #PARAM += params
                 # all_way_lang_masks = (all_view_lang_masks == False)
                 # all_way_lang_feats = self.waypoint_model(
                 #     mode='language',
@@ -348,29 +388,18 @@ class BaseVLNCETrainer(BaseILTrainer):
                 # encoding views
                 cand_rgb, cand_depth, cand_direction, \
                 cand_mask, candidate_lengths, \
-                batch_angles = self.policy.net(
+                batch_angles = self.policy(
                     mode = "view",
                     observations = batch,
                     in_train = False,
                 )
+                #flops, params = profile(self.policy, inputs=("view",batch,None,None,None,None,None,None,None,None,None,None,False))
+                #FLOPs += flops
+                #PARAM += params
 
                 # view selection action logits
                 # 可视化
-                # logits, view_states, attn_vis_weight, attn_act_weight = self.policy.net(
-                #     mode = 'selection',
-                #     observations = batch,
-                #     instruction = all_view_lang_feats,
-                #     lang_mask = all_view_lang_masks,
-                #     view_states = view_states,
-                #     # way_states = way_states,
-                #     prev_headings = prev_headings,
-                #     cand_rgb = cand_rgb, 
-                #     cand_depth = cand_depth,
-                #     cand_direction = cand_direction,
-                #     cand_mask = cand_mask,
-                #     masks = not_done_masks,
-                # )
-                logits, view_states = self.policy.net(
+                logits, view_states, attn_vis_weight, attn_act_weight = self.policy(
                     mode = 'selection',
                     observations = batch,
                     instruction = all_view_lang_feats,
@@ -384,6 +413,9 @@ class BaseVLNCETrainer(BaseILTrainer):
                     cand_mask = cand_mask,
                     masks = not_done_masks,
                 )
+                #flops, params = profile(self.policy, inputs=("selection",batch,all_view_lang_feats,all_view_lang_masks,view_states,None,cand_rgb,cand_depth,cand_direction,cand_mask,prev_headings,not_done_masks,True))
+                #FLOPs += flops
+                #PARAM += params
 
                 logits = logits.masked_fill_(cand_mask, -float('inf'))
                 actions = logits.argmax(dim=-1, keepdim=True)
@@ -406,6 +438,10 @@ class BaseVLNCETrainer(BaseILTrainer):
                     # cand_mask = cand_mask,
                     masks = not_done_masks,
                 )
+                #flops, params = profile(self.waypoint_model, inputs=("way_actor",None, all_view_lang_masks, all_view_lang_feats, view_states, prev_headings, prev_way_dists, batch_angles, actions, cand_rgb, cand_depth, cand_direction, not_done_masks))
+                #FLOPs += flops
+                #PARAM += params
+                #print(FLOPs, PARAM)
 
                 # high-to-low actions in environments
                 prev_way_dists = []  # reset predicted step dists (for not done agents)
@@ -425,8 +461,8 @@ class BaseVLNCETrainer(BaseILTrainer):
                         prev_way_dists.append(dist_offsets[j].item())
 
             outputs = envs.step(env_actions)
-            # attn_vis.append(attn_vis_weight)
-            # attn_act.append(attn_act_weight)
+            attn_vis.append(attn_vis_weight)
+            attn_act.append(attn_act_weight)
             observations, _, dones, infos = [list(x) for x in zip(*outputs)]
             for j, ob in enumerate(observations):
                 if env_actions[j]['action']['action'] == 0:
@@ -462,14 +498,14 @@ class BaseVLNCETrainer(BaseILTrainer):
                 metric = {}
                 metric['steps_taken'] = info['steps_taken']
                 
-                gt_path = np.array(self.gt_data[ep_id]['locations']).astype(np.float)
+                gt_path = np.array(self.gt_data[ep_id]['locations']).astype(float)
                 if 'current_path' in envs.current_episodes()[i].info.keys():
-                    positions_ = np.array(envs.current_episodes()[i].info['current_path']).astype(np.float)
+                    positions_ = np.array(envs.current_episodes()[i].info['current_path']).astype(float)
                     collisions_ = np.array(envs.current_episodes()[i].info['collisions'])
                     assert collisions_.shape[0] == positions_.shape[0] - 1
                 else:
-                    positions_ = np.array(dis_to_con(np.array(info['position']['position']))).astype(np.float)
-                distance = np.array(info['position']['distance']).astype(np.float)
+                    positions_ = np.array(dis_to_con(np.array(info['position']['position']))).astype(float)
+                distance = np.array(info['position']['distance']).astype(float)
                 metric['distance_to_goal'] = distance[-1]
                 metric['success'] = 1. if distance[-1] <= 3. and env_actions[i]['action']['action'] == 0 else 0.
                 metric['oracle_success'] = 1. if (distance <= 3.).any() else 0.
@@ -479,14 +515,22 @@ class BaseVLNCETrainer(BaseILTrainer):
                 gt_length = distance[0]
                 metric['spl'] = metric['success']*gt_length/max(gt_length,metric['path_length'])
 
-                # act_con_path = np.array(dis_to_con(positions_)).astype(np.float)
+                # act_con_path = np.array(dis_to_con(positions_)).astype(float)
                 act_con_path = positions_
-                gt_con_path = np.array(dis_to_con(gt_path)).astype(np.float)
+                gt_con_path = np.array(dis_to_con(gt_path)).astype(float)
                 dtw_distance = fastdtw(act_con_path, gt_con_path, dist=NDTW.euclidean_distance)[0]
                 nDTW = np.exp(-dtw_distance / (len(gt_con_path) * config.TASK_CONFIG.TASK.SUCCESS_DISTANCE))
 
                 metric['ndtw'] = nDTW
                 stats_episodes[current_episodes[i].episode_id] = metric
+                # 可视化 768 -> step
+                if self.config.EVAL.VISUALIZE:
+                    map1 = torch.cat(attn_vis, dim=0)
+                    map2 = torch.cat(attn_act, dim=0)
+                    obs = envs.current_episodes()
+                    show_heatmaps(map1.T.cpu(), map2.T.cpu(), 'time_step', 'instruction', title="episode:"+ep_id, text=obs[0].instruction.instruction_text, path="logs")
+                attn_vis = []
+                attn_act = []
 
                 observations[i] = envs.reset_at(i)[0]
                 # number += 1
@@ -527,17 +571,11 @@ class BaseVLNCETrainer(BaseILTrainer):
                     ]
                     rgb_frames[i] = []
 
-                # 可视化 768 -> step
-                # map1 = torch.cat(attn_vis, dim=0)
-                # map2 = torch.cat(attn_act, dim=0)
-                # instr_text = observations[0]['instruction']['text']
-                # show_heatmaps(map1.T.cpu(), map2.T.cpu(), 'time_step', 'instruction', title="episode:"+ep_id, text=instr_text, path=config.VIDEO_DIR)
-                # attn_vis = []
-                # attn_act = []
 
             observations = extract_instruction_tokens(
                 observations,
                 self.config.TASK_CONFIG.TASK.INSTRUCTION_SENSOR_UUID,
+                return_mask=True
             )
             batch = batch_obs(observations, self.device)
             batch = apply_obs_transforms_batch(batch, obs_transforms)
@@ -571,7 +609,9 @@ class BaseVLNCETrainer(BaseILTrainer):
                 # positions
             )
             prev_headings = prev_headings.tolist()
-
+        cost_time = time.time() - start_time
+        if config.use_pbar:
+            cost_time = min(cost_time, pbar.format_dict['elapsed'])
         envs.close()
         if config.use_pbar:
             pbar.close()
@@ -602,7 +642,10 @@ class BaseVLNCETrainer(BaseILTrainer):
                 v = (sum(cat_v)/total).item()
                 # print(self.local_rank, k+':', v, num_episodes, 'after divide total')
                 aggregated_stats[k] = v
-
+        aggregated_stats["cost_time"] = cost_time
+        # temperarily write cost time into files
+        # with open("logs/best_cost_time_{}_{}.txt".format(self.config.EVAL.SPLIT, time.time()), "w") as f:
+        #     f.write(str(cost_time))
         split = config.TASK_CONFIG.DATASET.SPLIT
         fname = os.path.join(
             config.RESULTS_DIR,
@@ -644,7 +687,7 @@ class BaseVLNCETrainer(BaseILTrainer):
 
                     with gzip.open(
                         self.config.IL.RECOLLECT_TRAINER.gt_file.format(
-                            split=split, role=rolen
+                            split=split, role=role
                         ),
                         "rt",
                     ) as f:
@@ -656,11 +699,16 @@ class BaseVLNCETrainer(BaseILTrainer):
                 ) as f:
                     gt_data = json.load(f)
         else:
-            with gzip.open(
-                self.config.TASK_CONFIG.TASK.NDTW.GT_PATH.format(
-                    split=split)
-            ) as f:
-                gt_data = json.load(f)
+            if os.path.exists(self.config.TASK_CONFIG.TASK.NDTW.GT_PATH.format(split=split)):
+                with gzip.open(
+                    self.config.TASK_CONFIG.TASK.NDTW.GT_PATH.format(
+                        split=split)
+                ) as f:
+                    gt_data = json.load(f)
+            else:
+                with gzip.open(self.config.TASK_CONFIG.DATASET.DATA_PATH.format(split=split)) as f:
+                    data = json.load(f)
+                gt_data = {str(v["episode_id"]):"" for v in data["episodes"]}
 
         self.gt_data = gt_data
             # t = (
@@ -832,7 +880,7 @@ class BaseVLNCETrainer(BaseILTrainer):
             None
         """
         self.device = (
-            torch.device("cuda", self.config.TORCH_GPU_ID)
+            torch.device("cuda", self.config.local_rank)
             if torch.cuda.is_available()
             else torch.device("cpu")
         )
@@ -849,9 +897,7 @@ class BaseVLNCETrainer(BaseILTrainer):
         # self.config.TASK_CONFIG.TASK.NDTW.SPLIT = split
         # self.config.TASK_CONFIG.TASK.SDTW.SPLIT = split
         self.config.TASK_CONFIG.DATASET.ROLES = ["guide"]
-        self.config.TASK_CONFIG.TASK.MEASUREMENTS = ['POSITION',
-                                                     'STEPS_TAKEN',
-                                                     ]
+        self.config.TASK_CONFIG.TASK.MEASUREMENTS = []
         if 'HIGHTOLOW' in self.config.TASK_CONFIG.TASK.POSSIBLE_ACTIONS:
             idx = self.config.TASK_CONFIG.TASK.POSSIBLE_ACTIONS.index('HIGHTOLOW')
             self.config.TASK_CONFIG.TASK.POSSIBLE_ACTIONS[idx] = 'HIGHTOLOWEVAL'
@@ -885,16 +931,18 @@ class BaseVLNCETrainer(BaseILTrainer):
         self.config.IL.ckpt_to_load = checkpoint_path
         self.config.TASK_CONFIG = task_config
         self.config.SENSORS = task_config.SIMULATOR.AGENT_0.SENSORS
+        self.config.TASK_CONFIG.ENVIRONMENT.ITERATOR_OPTIONS.SHUFFLE = False
+        self.config.TASK_CONFIG.ENVIRONMENT.ITERATOR_OPTIONS.MAX_SCENE_REPEAT_STEPS = (
+            -1
+        )
         # self.config.ENV_NAME = "VLNCEInferenceEnv"
         self.config.freeze()
-        # self.config.TASK_CONFIG.ENVIRONMENT.ITERATOR_OPTIONS.SHUFFLE = False
-        # self.config.TASK_CONFIG.ENVIRONMENT.ITERATOR_OPTIONS.MAX_SCENE_REPEAT_STEPS = (
-        #     -1
-        # )
         torch.cuda.set_device(self.device)
+        self.traj = self.collect_val_traj()
         envs = construct_envs(
             self.config, get_env_class(self.config.ENV_NAME),
             auto_reset_done=False,
+            episodes_allowed=self.traj
         )
 
         obs_transforms = get_active_obs_transforms(self.config)
@@ -916,7 +964,7 @@ class BaseVLNCETrainer(BaseILTrainer):
 
         observations = envs.reset()
         observations = extract_instruction_tokens(
-            observations, self.config.TASK_CONFIG.TASK.INSTRUCTION_SENSOR_UUID
+            observations, self.config.TASK_CONFIG.TASK.INSTRUCTION_SENSOR_UUID, return_mask=True
         )
         batch = batch_obs(observations, self.device)
         batch = apply_obs_transforms_batch(batch, obs_transforms)
@@ -965,20 +1013,20 @@ class BaseVLNCETrainer(BaseILTrainer):
                     prev_way_dists = [0.0] * envs.num_envs
 
                 with torch.no_grad():
-                    all_view_lang_feats, all_view_lang_masks = self.policy.net(
+                    all_view_lang_feats, all_view_lang_masks = self.policy(
                         mode = "language",
                         observations = batch,
                     )
                     # encoding views
                     cand_rgb, cand_depth, cand_direction, \
                     cand_mask, candidate_lengths, \
-                    batch_angles = self.policy.net(
+                    batch_angles = self.policy(
                         mode = "view",
                         observations = batch,
                         in_train = False,
                     )
                     # view selection action logits
-                    logits, view_states, attn_vis_weight, attn_act_weight = self.policy.net(
+                    logits, view_states, attn_vis_weight, attn_act_weight = self.policy(
                         mode = 'selection',
                         observations = batch,
                         instruction = all_view_lang_feats,
@@ -1074,6 +1122,7 @@ class BaseVLNCETrainer(BaseILTrainer):
                 observations = extract_instruction_tokens(
                     observations,
                     self.config.TASK_CONFIG.TASK.INSTRUCTION_SENSOR_UUID,
+                    return_mask=True
                 )
                 batch = batch_obs(observations, self.device)
                 batch = apply_obs_transforms_batch(batch, obs_transforms)
