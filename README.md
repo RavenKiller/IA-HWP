@@ -33,16 +33,16 @@
         and Wang, Liuyi
         and Liu, Chengju
         and Chen, Qijun},
-        title={Instruction-aligned hierarchical waypoint planner for vision-and-language navigation in continuous environments},
-        journal={Pattern Analysis and Applications},
-        year={2024},
-        month={Oct},
-        day={03},
-        volume={27},
-        number={4},
-        pages={132},
-        issn={1433-755X},
-        doi={10.1007/s10044-024-01339-z},
-        url={https://doi.org/10.1007/s10044-024-01339-z}
+    title={Instruction-aligned hierarchical waypoint planner for vision-and-language navigation in continuous environments},
+    journal={Pattern Analysis and Applications},
+    year={2024},
+    month={Oct},
+    day={03},
+    volume={27},
+    number={4},
+    pages={132},
+    issn={1433-755X},
+    doi={10.1007/s10044-024-01339-z},
+    url={https://doi.org/10.1007/s10044-024-01339-z}
 }
 ```
