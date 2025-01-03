@@ -1,4 +1,17 @@
-# Instruction-Aligned Hierarchical Waypoint Planner for Vision-and-Language Navigation in Continuous Environments
+<div align="center">
+
+<h1>Instruction-Aligned Hierarchical Waypoint Planner for Vision-and-Language Navigation in Continuous Environments</h1>
+
+<div>
+    <a href='https://link.springer.com/article/10.1007/s10044-024-01339-z' target='_blank'>[Paper]</a>
+</div>
+</div>
+
+<br />
+<div align="center">
+    <img src="https://github.com/user-attachments/assets/3a2fb5af-1600-40ea-9d20-c3a9ea83641b", width="1000", alt="Model architecture">
+</div>
+
 # Preparation
 1. Install [habitat-lab and VLN-CE](https://github.com/jacobkrantz/VLN-CE)
 2. Install other requirements:
